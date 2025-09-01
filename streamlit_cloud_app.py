@@ -26,14 +26,14 @@ class CloudVLMSystem:
     def __init__(self):
         self.excel_files = []
         self.processed_data = {}
-        self.sample_images = {}
+        self.extracted_images = {}
         self.initialize_system()
     
     def initialize_system(self):
         """시스템 초기화"""
         try:
-            # 샘플 이미지 생성
-            self.create_sample_images()
+            # Excel 파일에서 이미지 추출
+            self.extract_images_from_excel()
             
             # Excel 파일 처리 (실제 파일 내용 기반)
             self.process_real_excel_data()
@@ -44,24 +44,62 @@ class CloudVLMSystem:
             st.error(f"❌ 시스템 초기화 중 오류 발생: {str(e)}")
             return False
     
-    def create_sample_images(self):
-        """샘플 이미지 생성"""
+    def extract_images_from_excel(self):
+        """Excel 파일에서 이미지 추출"""
+        try:
+            excel_files = [f for f in os.listdir('.') if f.endswith('.xlsx') and not f.startswith('~$')]
+            
+            for excel_file in excel_files:
+                logger.info(f"Excel 파일에서 이미지 추출 중: {excel_file}")
+                
+                # Excel 파일을 ZIP으로 열기
+                with zipfile.ZipFile(excel_file, 'r') as zip_file:
+                    # 이미지 파일들 찾기
+                    image_files = [f for f in zip_file.namelist() if f.startswith('xl/media/')]
+                    
+                    for image_file in image_files:
+                        try:
+                            # 이미지 파일 읽기
+                            with zip_file.open(image_file) as img_file:
+                                img_data = img_file.read()
+                                img = Image.open(io.BytesIO(img_data))
+                                
+                                # 이미지 이름 추출
+                                img_name = os.path.basename(image_file)
+                                img_name_without_ext = os.path.splitext(img_name)[0]
+                                
+                                # 이미지 저장
+                                self.extracted_images[img_name_without_ext] = img
+                                logger.info(f"이미지 추출 완료: {img_name}")
+                                
+                        except Exception as e:
+                            logger.error(f"이미지 추출 실패 {image_file}: {e}")
+            
+            logger.info(f"총 {len(self.extracted_images)}개 이미지 추출 완료")
+            
+        except Exception as e:
+            logger.error(f"Excel 이미지 추출 실패: {e}")
+            # 이미지가 없으면 기본 이미지 생성
+            self.create_default_images()
+    
+    def create_default_images(self):
+        """기본 이미지 생성 (Excel에서 이미지를 찾을 수 없을 때)"""
         try:
             # 품질검사표 이미지
             quality_img = self.create_quality_inspection_image()
-            self.sample_images["품질검사표"] = quality_img
+            self.extracted_images["품질검사표"] = quality_img
             
             # 조립공정도 이미지
             assembly_img = self.create_assembly_process_image()
-            self.sample_images["조립공정도"] = assembly_img
+            self.extracted_images["조립공정도"] = assembly_img
             
             # 부품도면 이미지
             part_img = self.create_part_drawing_image()
-            self.sample_images["부품도면"] = part_img
+            self.extracted_images["부품도면"] = part_img
             
-            logger.info("샘플 이미지 생성 완료")
+            logger.info("기본 이미지 생성 완료")
         except Exception as e:
-            logger.error(f"샘플 이미지 생성 실패: {e}")
+            logger.error(f"기본 이미지 생성 실패: {e}")
     
     def create_quality_inspection_image(self):
         """품질검사표 이미지 생성"""
@@ -294,33 +332,52 @@ class CloudVLMSystem:
     
     def get_image_data(self, query):
         """이미지 데이터 반환"""
-        if "품질" in query:
+        query_lower = query.lower()
+        
+        # 추출된 이미지 목록 표시
+        if not self.extracted_images:
             return {
-                "type": "image",
-                "title": "🔍 품질검사표",
-                "image": self.sample_images["품질검사표"],
-                "description": "품질검사 기준 및 절차"
+                "type": "no_image",
+                "title": "🖼️ 이미지 없음",
+                "content": "Excel 파일에서 추출된 이미지가 없습니다.",
+                "available_images": []
             }
-        elif "조립" in query:
+        
+        # 질문에 맞는 이미지 찾기
+        matched_images = []
+        
+        for img_name, img in self.extracted_images.items():
+            img_name_lower = img_name.lower()
+            
+            # 키워드 매칭
+            if "품질" in query_lower and ("품질" in img_name_lower or "검사" in img_name_lower):
+                matched_images.append((img_name, img, "품질검사 관련"))
+            elif "조립" in query_lower and ("조립" in img_name_lower or "공정" in img_name_lower):
+                matched_images.append((img_name, img, "조립공정 관련"))
+            elif ("부품" in query_lower or "도면" in query_lower) and ("부품" in img_name_lower or "도면" in img_name_lower):
+                matched_images.append((img_name, img, "부품도면 관련"))
+            elif "이미지" in query_lower or "사진" in query_lower:
+                # 일반적인 이미지 요청인 경우 모든 이미지 표시
+                matched_images.append((img_name, img, "일반 이미지"))
+        
+        if matched_images:
+            # 첫 번째 매칭된 이미지 반환
+            img_name, img, description = matched_images[0]
             return {
                 "type": "image",
-                "title": "⚙️ 조립공정도",
-                "image": self.sample_images["조립공정도"],
-                "description": "조립 공정 흐름도"
-            }
-        elif "부품" in query or "도면" in query:
-            return {
-                "type": "image",
-                "title": "📐 부품도면",
-                "image": self.sample_images["부품도면"],
-                "description": "부품 상세 도면"
+                "title": f"🖼️ {img_name}",
+                "image": img,
+                "description": description,
+                "all_images": matched_images
             }
         else:
+            # 매칭되는 이미지가 없으면 모든 이미지 목록 표시
             return {
-                "type": "image",
-                "title": "🖼️ 관련 이미지",
-                "image": self.sample_images["품질검사표"],
-                "description": "요청하신 이미지"
+                "type": "image_list",
+                "title": "🖼️ 사용 가능한 이미지들",
+                "content": "질문에 맞는 이미지를 찾을 수 없습니다. 다음 이미지들이 있습니다:",
+                "available_images": list(self.extracted_images.keys()),
+                "all_images": [(name, img, "사용 가능한 이미지") for name, img in self.extracted_images.items()]
             }
     
     def get_general_response(self, query):
@@ -447,6 +504,45 @@ def display_result(result):
         
         # 이미지 정보 표시
         st.info(f"📐 이미지 크기: {result['image'].size[0]} x {result['image'].size[1]} 픽셀")
+        
+        # 다른 매칭된 이미지들도 표시
+        if "all_images" in result and len(result["all_images"]) > 1:
+            st.write("🔍 다른 관련 이미지들:")
+            for i, (img_name, img, desc) in enumerate(result["all_images"][1:], 1):
+                with st.expander(f"{i}. {img_name}"):
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='PNG')
+                    img_byte_arr = img_byte_arr.getvalue()
+                    st.image(img_byte_arr, caption=desc, width=300)
+    
+    elif result["type"] == "image_list":
+        st.subheader(result["title"])
+        st.write(result["content"])
+        
+        # 사용 가능한 이미지 목록 표시
+        if "available_images" in result:
+            st.write("📋 사용 가능한 이미지:")
+            for img_name in result["available_images"]:
+                st.write(f"- {img_name}")
+        
+        # 모든 이미지 표시
+        if "all_images" in result:
+            st.write("🖼️ 모든 이미지:")
+            for i, (img_name, img, desc) in enumerate(result["all_images"], 1):
+                with st.expander(f"{i}. {img_name}"):
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='PNG')
+                    img_byte_arr = img_byte_arr.getvalue()
+                    st.image(img_byte_arr, caption=desc, width=300)
+    
+    elif result["type"] == "no_image":
+        st.subheader(result["title"])
+        st.write(result["content"])
+        
+        if "available_images" in result:
+            st.write("📋 사용 가능한 이미지:")
+            for img_name in result["available_images"]:
+                st.write(f"- {img_name}")
     
     elif result["type"] == "general":
         st.subheader(result["title"])
