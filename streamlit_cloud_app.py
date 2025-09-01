@@ -217,8 +217,12 @@ class CloudVLMSystem:
         """쿼리 처리"""
         query_lower = query.lower()
         
+        # 이미지 관련 (우선순위 높임)
+        if "이미지" in query_lower or "사진" in query_lower:
+            return self.get_image_data(query)
+        
         # 조립 공정 관련
-        if "조립" in query_lower or "공정" in query_lower:
+        elif "조립" in query_lower or "공정" in query_lower:
             return self.get_assembly_process_data()
         
         # 제품 정보 관련
@@ -232,10 +236,6 @@ class CloudVLMSystem:
         # 품질 관리 관련
         elif "품질" in query_lower or "검사" in query_lower:
             return self.get_quality_data()
-        
-        # 이미지 관련
-        elif "이미지" in query_lower or "사진" in query_lower:
-            return self.get_image_data(query)
         
         else:
             return self.get_general_response(query)
