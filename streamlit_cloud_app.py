@@ -65,17 +65,117 @@ class CloudVLMSystem:
     
     def create_quality_inspection_image(self):
         """품질검사표 이미지 생성"""
+        # 400x300 크기의 이미지 생성
         img = Image.new('RGB', (400, 300), color='white')
+        
+        # 간단한 품질검사표 그리기
+        from PIL import ImageDraw, ImageFont
+        
+        draw = ImageDraw.Draw(img)
+        
+        # 제목
+        draw.text((20, 20), "품질검사표", fill='black')
+        draw.line([(20, 50), (380, 50)], fill='black', width=2)
+        
+        # 검사 항목들
+        items = [
+            "1. 외관 검사",
+            "2. 치수 검사", 
+            "3. 기능 검사",
+            "4. 내구성 검사"
+        ]
+        
+        y_pos = 70
+        for item in items:
+            draw.text((30, y_pos), item, fill='blue')
+            y_pos += 30
+        
+        # 합격/불합격 체크박스
+        draw.text((200, 70), "□ 합격", fill='green')
+        draw.text((200, 100), "□ 불합격", fill='red')
+        
         return img
     
     def create_assembly_process_image(self):
         """조립공정도 이미지 생성"""
+        # 400x300 크기의 이미지 생성
         img = Image.new('RGB', (400, 300), color='lightblue')
+        
+        from PIL import ImageDraw
+        
+        draw = ImageDraw.Draw(img)
+        
+        # 제목
+        draw.text((20, 20), "조립공정도", fill='darkblue')
+        draw.line([(20, 50), (380, 50)], fill='darkblue', width=2)
+        
+        # 공정 흐름도 그리기
+        processes = [
+            "수입검사",
+            "이오나이저",
+            "DINO 검사", 
+            "CU+SPONGE",
+            "도전 TAPE",
+            "출하검사",
+            "포장"
+        ]
+        
+        x_pos = 30
+        y_pos = 80
+        for i, process in enumerate(processes):
+            # 박스 그리기
+            draw.rectangle([x_pos, y_pos, x_pos+80, y_pos+40], outline='darkblue', width=2, fill='white')
+            draw.text((x_pos+5, y_pos+10), process, fill='darkblue', size=8)
+            
+            # 화살표 그리기 (마지막 제외)
+            if i < len(processes) - 1:
+                draw.line([x_pos+80, y_pos+20, x_pos+100, y_pos+20], fill='darkblue', width=2)
+                # 화살표 머리
+                draw.polygon([(x_pos+100, y_pos+15), (x_pos+100, y_pos+25), (x_pos+110, y_pos+20)], fill='darkblue')
+            
+            x_pos += 100
+            
+            # 두 번째 줄로 넘어가기
+            if x_pos > 350:
+                x_pos = 30
+                y_pos += 80
+        
         return img
     
     def create_part_drawing_image(self):
         """부품도면 이미지 생성"""
+        # 400x300 크기의 이미지 생성
         img = Image.new('RGB', (400, 300), color='lightgreen')
+        
+        from PIL import ImageDraw
+        
+        draw = ImageDraw.Draw(img)
+        
+        # 제목
+        draw.text((20, 20), "부품도면 - FRONT DECO SUB", fill='darkgreen')
+        draw.line([(20, 50), (380, 50)], fill='darkgreen', width=2)
+        
+        # 간단한 도면 그리기
+        # 외곽선
+        draw.rectangle([50, 80, 350, 250], outline='darkgreen', width=3)
+        
+        # 내부 구조
+        draw.rectangle([70, 100, 150, 180], outline='darkgreen', width=2, fill='white')
+        draw.text((80, 120), "GATE", fill='darkgreen')
+        
+        draw.rectangle([170, 100, 250, 180], outline='darkgreen', width=2, fill='white')
+        draw.text((180, 120), "SPONGE", fill='darkgreen')
+        
+        draw.rectangle([270, 100, 330, 180], outline='darkgreen', width=2, fill='white')
+        draw.text((280, 120), "TAPE", fill='darkgreen')
+        
+        # 치수선
+        draw.line([50, 260, 350, 260], fill='darkgreen', width=1)
+        draw.text((200, 270), "300mm", fill='darkgreen')
+        
+        draw.line([370, 80, 370, 250], fill='darkgreen', width=1)
+        draw.text((380, 165), "170mm", fill='darkgreen')
+        
         return img
     
     def process_real_excel_data(self):
@@ -336,7 +436,17 @@ def display_result(result):
     
     elif result["type"] == "image":
         st.subheader(result["title"])
-        st.image(result["image"], caption=result["description"], width=400)
+        
+        # 이미지를 바이트로 변환하여 표시
+        import io
+        img_byte_arr = io.BytesIO()
+        result["image"].save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
+        
+        st.image(img_byte_arr, caption=result["description"], width=400)
+        
+        # 이미지 정보 표시
+        st.info(f"📐 이미지 크기: {result['image'].size[0]} x {result['image'].size[1]} 픽셀")
     
     elif result["type"] == "general":
         st.subheader(result["title"])
