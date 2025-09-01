@@ -82,6 +82,47 @@ class CloudVLMSystem:
             # 이미지가 없으면 기본 이미지 생성
             self.create_default_images()
     
+    def extract_images_from_uploaded_file(self, uploaded_file):
+        """업로드된 Excel 파일에서 이미지 추출"""
+        try:
+            # 업로드된 파일을 임시로 저장
+            with open("temp_excel.xlsx", "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            
+            # Excel 파일을 ZIP으로 열기
+            with zipfile.ZipFile("temp_excel.xlsx", 'r') as zip_file:
+                # 이미지 파일들 찾기
+                image_files = [f for f in zip_file.namelist() if f.startswith('xl/media/')]
+                
+                extracted_count = 0
+                for image_file in image_files:
+                    try:
+                        # 이미지 파일 읽기
+                        with zip_file.open(image_file) as img_file:
+                            img_data = img_file.read()
+                            img = Image.open(io.BytesIO(img_data))
+                            
+                            # 이미지 이름 추출
+                            img_name = os.path.basename(image_file)
+                            img_name_without_ext = os.path.splitext(img_name)[0]
+                            
+                            # 이미지 저장
+                            self.extracted_images[img_name_without_ext] = img
+                            extracted_count += 1
+                            
+                    except Exception as e:
+                        logger.error(f"이미지 추출 실패 {image_file}: {e}")
+                
+                # 임시 파일 삭제
+                if os.path.exists("temp_excel.xlsx"):
+                    os.remove("temp_excel.xlsx")
+                
+                return extracted_count
+                
+        except Exception as e:
+            logger.error(f"업로드된 Excel 이미지 추출 실패: {e}")
+            return 0
+    
     def create_default_images(self):
         """기본 이미지 생성 (Excel에서 이미지를 찾을 수 없을 때)"""
         try:
@@ -407,6 +448,26 @@ def main():
             st.session_state.system = CloudVLMSystem()
             st.rerun()
         
+        st.header("📁 Excel 파일 업로드")
+        st.write("Excel 파일을 업로드하여 이미지를 추출할 수 있습니다.")
+        
+        uploaded_file = st.file_uploader(
+            "Excel 파일 선택 (.xlsx)",
+            type=['xlsx'],
+            help="이미지가 포함된 Excel 파일을 업로드하세요"
+        )
+        
+        if uploaded_file is not None:
+            if st.button("📤 이미지 추출", type="primary"):
+                with st.spinner("Excel 파일에서 이미지를 추출하고 있습니다..."):
+                    extracted_count = st.session_state.system.extract_images_from_uploaded_file(uploaded_file)
+                    if extracted_count > 0:
+                        st.success(f"✅ {extracted_count}개 이미지 추출 완료!")
+                    else:
+                        st.warning("⚠️ 이미지를 찾을 수 없습니다. 기본 이미지를 사용합니다.")
+                        st.session_state.system.create_default_images()
+                    st.rerun()
+        
         st.header("📝 예시 질문들")
         
         example_questions = [
@@ -428,6 +489,13 @@ def main():
     
     if 'query' not in st.session_state:
         st.session_state.query = ""
+    
+    # 현재 추출된 이미지 정보 표시
+    if st.session_state.system.extracted_images:
+        st.info(f"📸 현재 {len(st.session_state.system.extracted_images)}개 이미지가 로드되어 있습니다.")
+        with st.expander("📋 로드된 이미지 목록"):
+            for img_name in st.session_state.system.extracted_images.keys():
+                st.write(f"- {img_name}")
     
     # 쿼리 입력
     query = st.text_input(
