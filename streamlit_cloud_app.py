@@ -35,8 +35,8 @@ class CloudVLMSystem:
             # 샘플 이미지 생성
             self.create_sample_images()
             
-            # Excel 파일 처리 (샘플 데이터 사용)
-            self.process_sample_excel_data()
+            # Excel 파일 처리 (실제 파일 내용 기반)
+            self.process_real_excel_data()
             
             st.success("✅ 시스템 초기화 완료!")
             return True
@@ -78,47 +78,60 @@ class CloudVLMSystem:
         img = Image.new('RGB', (400, 300), color='lightgreen')
         return img
     
-    def process_sample_excel_data(self):
-        """샘플 Excel 데이터 처리"""
+    def process_real_excel_data(self):
+        """실제 Excel 파일 내용 기반 데이터 처리"""
         self.processed_data = {
-            "월별 생산량": {
-                "1월": 1500, "2월": 1800, "3월": 2200, "4월": 2000,
-                "5월": 2500, "6월": 2800, "7월": 3000, "8월": 3200,
-                "9월": 3500, "10월": 3800, "11월": 4000, "12월": 4200
+            "조립 공정": {
+                "수입검사": "부품 외관 및 치수 검사",
+                "이오나이저 작업": "이물제거 및 정전기 제거",
+                "DINO 검사": "전장 디노 검사 및 GATE DINO 검사",
+                "CU+SPONGE TAPE 조립": "압착 및 경사압착 작업",
+                "도전 TAPE 검사": "좌우 편심검사",
+                "SPONGE TAPE 검사": "실오라기 육안검사 및 확대경 검사",
+                "출하검사": "100% 및 200% 검사",
+                "포장": "최종 포장 작업"
             },
-            "품질검사 합격률": {
-                "1분기": 95.2, "2분기": 96.8, "3분기": 97.1, "4분기": 98.3
+            "제품 정보": {
+                "모델명": "SM-F741U",
+                "제품코드": "GH98-49241A",
+                "부품명": "FRONT DECO SUB",
+                "문서번호": "SK-WI-001",
+                "작성자": "강승지 프로",
+                "작성부서": "개발팀"
             },
-            "조립 공정 소요시간": {
-                "메인보드 조립": "45분", "부품 결합": "30분", "품질검사": "15분", "포장": "10분"
+            "ERP 시스템": {
+                "BOM 정보": "제품 생산에 필요한 자재 확인",
+                "BOM 정전개 현황": "메뉴 - BOM 정보 - 5. BOM 정전개 현황",
+                "자재 관리": "생산에 필요한 자재 현황",
+                "공급업체 정보": "부품 공급업체 관리"
             },
-            "메인보드 단가": "₩125,000",
-            "현재고 수량": "2,450개"
+            "품질 관리": {
+                "검사 기준": "각 공정별 품질 검사 기준",
+                "검사 항목": "외관, 치수, 기능 검사",
+                "불합격 기준": "품질 기준 미달 시 처리 절차",
+                "검사 기록": "검사 결과 기록 및 관리"
+            }
         }
     
     def query_system(self, query):
         """쿼리 처리"""
         query_lower = query.lower()
         
-        # 월별 생산량 관련
-        if "생산량" in query_lower:
-            return self.get_production_data()
+        # 조립 공정 관련
+        if "조립" in query_lower or "공정" in query_lower:
+            return self.get_assembly_process_data()
         
-        # 품질검사 관련
+        # 제품 정보 관련
+        elif "제품" in query_lower or "모델" in query_lower:
+            return self.get_product_info_data()
+        
+        # ERP 시스템 관련
+        elif "erp" in query_lower or "bom" in query_lower or "자재" in query_lower:
+            return self.get_erp_data()
+        
+        # 품질 관리 관련
         elif "품질" in query_lower or "검사" in query_lower:
             return self.get_quality_data()
-        
-        # 조립 공정 관련
-        elif "조립" in query_lower or "공정" in query_lower:
-            return self.get_assembly_data()
-        
-        # 단가 관련
-        elif "단가" in query_lower or "가격" in query_lower:
-            return self.get_price_data()
-        
-        # 재고 관련
-        elif "재고" in query_lower or "수량" in query_lower:
-            return self.get_inventory_data()
         
         # 이미지 관련
         elif "이미지" in query_lower or "사진" in query_lower:
@@ -127,63 +140,56 @@ class CloudVLMSystem:
         else:
             return self.get_general_response(query)
     
-    def get_production_data(self):
-        """생산량 데이터 반환"""
-        data = self.processed_data["월별 생산량"]
-        df = pd.DataFrame(list(data.items()), columns=['월', '생산량'])
-        
-        return {
-            "type": "production",
-            "title": "📊 월별 생산량 현황",
-            "data": df,
-            "summary": f"총 연간 생산량: {sum(data.values()):,}개",
-            "chart_type": "bar"
-        }
-    
-    def get_quality_data(self):
-        """품질검사 데이터 반환"""
-        data = self.processed_data["품질검사 합격률"]
-        df = pd.DataFrame(list(data.items()), columns=['분기', '합격률(%)'])
-        
-        return {
-            "type": "quality",
-            "title": "🔍 품질검사 합격률",
-            "data": df,
-            "summary": f"평균 합격률: {sum(data.values())/len(data):.1f}%",
-            "chart_type": "line"
-        }
-    
-    def get_assembly_data(self):
+    def get_assembly_process_data(self):
         """조립 공정 데이터 반환"""
-        data = self.processed_data["조립 공정 소요시간"]
-        df = pd.DataFrame(list(data.items()), columns=['공정', '소요시간'])
+        data = self.processed_data["조립 공정"]
+        df = pd.DataFrame(list(data.items()), columns=['공정명', '설명'])
         
         return {
             "type": "assembly",
-            "title": "⚙️ 조립 공정 소요시간",
+            "title": "⚙️ SM-F741U 조립 공정",
             "data": df,
-            "summary": "총 조립 시간: 1시간 40분",
-            "chart_type": "bar"
+            "summary": f"총 {len(data)}개 공정",
+            "chart_type": "table"
         }
     
-    def get_price_data(self):
-        """단가 데이터 반환"""
+    def get_product_info_data(self):
+        """제품 정보 데이터 반환"""
+        data = self.processed_data["제품 정보"]
+        df = pd.DataFrame(list(data.items()), columns=['항목', '내용'])
+        
         return {
-            "type": "price",
-            "title": "💰 메인보드 단가",
-            "data": self.processed_data["메인보드 단가"],
-            "summary": "현재 시장 평균 대비 15% 저렴",
-            "chart_type": "metric"
+            "type": "product",
+            "title": "📋 제품 정보",
+            "data": df,
+            "summary": f"모델: {data['모델명']} / 제품코드: {data['제품코드']}",
+            "chart_type": "table"
         }
     
-    def get_inventory_data(self):
-        """재고 데이터 반환"""
+    def get_erp_data(self):
+        """ERP 시스템 데이터 반환"""
+        data = self.processed_data["ERP 시스템"]
+        df = pd.DataFrame(list(data.items()), columns=['시스템', '기능'])
+        
         return {
-            "type": "inventory",
-            "title": "📦 현재고 수량",
-            "data": self.processed_data["현재고 수량"],
-            "summary": "안전재고 기준: 1,500개",
-            "chart_type": "metric"
+            "type": "erp",
+            "title": "💻 ERP 시스템 정보",
+            "data": df,
+            "summary": "제품 생산에 필요한 자재 관리 시스템",
+            "chart_type": "table"
+        }
+    
+    def get_quality_data(self):
+        """품질 관리 데이터 반환"""
+        data = self.processed_data["품질 관리"]
+        df = pd.DataFrame(list(data.items()), columns=['항목', '내용'])
+        
+        return {
+            "type": "quality",
+            "title": "🔍 품질 관리",
+            "data": df,
+            "summary": "각 공정별 품질 검사 기준 및 절차",
+            "chart_type": "table"
         }
     
     def get_image_data(self, query):
@@ -224,9 +230,10 @@ class CloudVLMSystem:
             "title": "💡 일반 정보",
             "content": f"'{query}'에 대한 정보를 찾을 수 없습니다. 더 구체적인 질문을 해주세요.",
             "suggestions": [
-                "월별 생산량은 얼마인가요?",
-                "품질검사 합격률은 몇 퍼센트인가요?",
-                "조립 공정의 소요시간은 얼마인가요?",
+                "조립 공정은 어떤 것들이 있나요?",
+                "제품 정보를 알려주세요",
+                "ERP 시스템 기능은 무엇인가요?",
+                "품질 검사 기준은 무엇인가요?",
                 "조립 공정도 이미지를 보여주세요"
             ]
         }
@@ -246,11 +253,10 @@ def main():
         st.header("📝 예시 질문들")
         
         example_questions = [
-            "월별 생산량은 얼마인가요?",
-            "품질검사 합격률은 몇 퍼센트인가요?",
-            "조립 공정의 소요시간은 얼마인가요?",
-            "메인보드의 단가는 얼마인가요?",
-            "현재고 수량은 몇 개인가요?",
+            "조립 공정은 어떤 것들이 있나요?",
+            "제품 정보를 알려주세요",
+            "ERP 시스템 기능은 무엇인가요?",
+            "품질 검사 기준은 무엇인가요?",
             "조립 공정도 이미지를 보여주세요"
         ]
         
@@ -270,7 +276,7 @@ def main():
     query = st.text_input(
         "🔍 질문을 입력하세요:",
         value=st.session_state.query,
-        placeholder="예: 월별 생산량은 얼마인가요?"
+        placeholder="예: 조립 공정은 어떤 것들이 있나요?"
     )
     
     if st.button("🚀 질문하기", type="primary") or st.session_state.query:
@@ -284,48 +290,49 @@ def main():
 
 def display_result(result):
     """결과 표시"""
-    if result["type"] == "production":
+    if result["type"] == "assembly":
         st.subheader(result["title"])
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.bar_chart(result["data"].set_index('월'))
+            st.dataframe(result["data"], use_container_width=True)
         
         with col2:
-            st.metric("총 연간 생산량", result["summary"])
-            st.dataframe(result["data"])
+            st.metric("총 공정 수", result["summary"])
+            st.info("SM-F741U 모델의 조립 공정 절차")
+    
+    elif result["type"] == "product":
+        st.subheader(result["title"])
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.dataframe(result["data"], use_container_width=True)
+        
+        with col2:
+            st.metric("모델명", result["summary"])
+            st.info("제품 기본 정보")
+    
+    elif result["type"] == "erp":
+        st.subheader(result["title"])
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.dataframe(result["data"], use_container_width=True)
+        
+        with col2:
+            st.metric("시스템", result["summary"])
+            st.info("ERP 시스템 기능")
     
     elif result["type"] == "quality":
         st.subheader(result["title"])
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.line_chart(result["data"].set_index('분기'))
+            st.dataframe(result["data"], use_container_width=True)
         
         with col2:
-            st.metric("평균 합격률", result["summary"])
-            st.dataframe(result["data"])
-    
-    elif result["type"] == "assembly":
-        st.subheader(result["title"])
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.bar_chart(result["data"].set_index('공정'))
-        
-        with col2:
-            st.metric("총 조립 시간", result["summary"])
-            st.dataframe(result["data"])
-    
-    elif result["type"] == "price":
-        st.subheader(result["title"])
-        st.metric("메인보드 단가", result["data"])
-        st.info(result["summary"])
-    
-    elif result["type"] == "inventory":
-        st.subheader(result["title"])
-        st.metric("현재고 수량", result["data"])
-        st.info(result["summary"])
+            st.metric("품질 관리", result["summary"])
+            st.info("품질 검사 기준 및 절차")
     
     elif result["type"] == "image":
         st.subheader(result["title"])
