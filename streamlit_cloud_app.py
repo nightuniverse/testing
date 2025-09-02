@@ -34,6 +34,10 @@ class CloudVLMSystem:
         self.text_chunks = []
         self.embeddings = []
         self.embedding_model = None
+        
+        # 자동 질문 생성 관련
+        self.auto_questions = []
+        
         self.initialize_system()
     
     def initialize_system(self):
@@ -125,7 +129,10 @@ class CloudVLMSystem:
             # 4단계: FAISS 벡터 데이터베이스 구축
             self._build_vector_database()
             
-            # 5단계: 처리된 데이터 저장
+            # 5단계: 자동 질문 생성
+            self.auto_questions = self.generate_auto_questions("temp_excel.xlsx")
+            
+            # 6단계: 처리된 데이터 저장
             file_name = uploaded_file.name
             self.processed_data[file_name] = {
                 "type": "excel_file",
@@ -133,6 +140,7 @@ class CloudVLMSystem:
                 "parsed_data": parsed_data,
                 "chunks_count": len(self.text_chunks),
                 "vector_db_size": len(self.embeddings),
+                "auto_questions_count": len(self.auto_questions),
                 "file_info": {
                     "name": file_name,
                     "size": len(uploaded_file.getbuffer()),
@@ -882,6 +890,97 @@ class CloudVLMSystem:
             ]
         }
     
+    def generate_auto_questions(self, excel_file_path):
+        """Excel 파일 내용을 분석하여 자동으로 질문 생성"""
+        try:
+            # Excel 파일 읽기
+            df = pd.read_excel(excel_file_path, sheet_name=None)
+            
+            questions = []
+            
+            # 키워드 정의
+            process_keywords = {'조립', '공정', '작업', '과정', '단계', '순서', '절차', '방법', '기술'}
+            quality_keywords = {'검사', '품질', '테스트', '확인', '검수', '점검', '측정', '기준'}
+            product_keywords = {'제품', '완성', '출하', '포장', '안착', '상세', '클로즈업'}
+            material_keywords = {'부품', '자재', '소재', '재료', 'BOM', '도면', '설계', '치수'}
+            equipment_keywords = {'장비', '기계', '도구', '지그', '현미경', '렌즈', '장치'}
+            
+            # 시트별 키워드 분석
+            process_found = False
+            quality_found = False
+            material_found = False
+            product_found = False
+            equipment_found = False
+            
+            for sheet_name, sheet_df in df.items():
+                if len(sheet_df) > 0:
+                    # 처음 5행에서 키워드 검색
+                    for idx, row in sheet_df.head(5).iterrows():
+                        row_text = ' '.join([str(val) for val in row.values if pd.notna(val)]).lower()
+                        
+                        if not process_found and any(kw in row_text for kw in process_keywords):
+                            questions.extend([
+                                "조립 공정도를 보여줘",
+                                "작업 과정을 설명해줘",
+                                "조립 단계별 이미지를 보여줘"
+                            ])
+                            process_found = True
+                        
+                        if not quality_found and any(kw in row_text for kw in quality_keywords):
+                            questions.extend([
+                                "품질 검사 과정을 보여줘",
+                                "검사 기준을 알려줘",
+                                "테스트 방법을 보여줘"
+                            ])
+                            quality_found = True
+                        
+                        if not material_found and any(kw in row_text for kw in material_keywords):
+                            questions.extend([
+                                "부품 도면을 보여줘",
+                                "BOM 정보를 알려줘",
+                                "자재 명세를 보여줘"
+                            ])
+                            material_found = True
+                        
+                        if not product_found and any(kw in row_text for kw in product_keywords):
+                            questions.extend([
+                                "완성된 제품을 보여줘",
+                                "제품 안착 이미지를 보여줘",
+                                "출하 상태를 보여줘"
+                            ])
+                            product_found = True
+                        
+                        if not equipment_found and any(kw in row_text for kw in equipment_keywords):
+                            questions.extend([
+                                "사용 장비를 보여줘",
+                                "작업 도구를 알려줘",
+                                "측정 장비를 보여줘"
+                            ])
+                            equipment_found = True
+                        
+                        if len(questions) >= 12:  # 최대 12개 질문
+                            break
+                    if len(questions) >= 12:
+                        break
+            
+            # 일반적인 질문 추가
+            questions.extend([
+                "파일 정보를 알려줘",
+                "시트 구조를 설명해줘",
+                "데이터 요약을 보여줘"
+            ])
+            
+            logger.info(f"자동 질문 생성 완료: {len(questions)}개")
+            return questions[:15]  # 최대 15개로 제한
+            
+        except Exception as e:
+            logger.error(f"자동 질문 생성 실패: {e}")
+            return [
+                "파일 정보를 알려줘",
+                "이미지를 보여줘",
+                "데이터를 요약해줘"
+            ]
+    
     def get_general_response(self, query):
         """일반 응답"""
         return {
@@ -950,18 +1049,34 @@ def main():
         
         st.header("📝 예시 질문들")
         
-        example_questions = [
-            "Excel 파일 정보를 보여주세요",
-            "BOM 정보는 무엇인가요?",
-            "제품 생산에 필요한 자재는?",
-            "조립 공정도 이미지를 보여주세요",
-            "품질검사 기준은 무엇인가요?"
-        ]
-        
-        for question in example_questions:
-            if st.button(question, key=f"btn_{question}"):
-                st.session_state.query = question
-                st.rerun()
+        # 자동 생성된 질문들 표시
+        if uploaded_file is not None and hasattr(st.session_state.system, 'auto_questions'):
+            st.subheader("🤖 AI 자동 생성 질문")
+            for i, question in enumerate(st.session_state.system.auto_questions[:8], 1):  # 상위 8개만 표시
+                if st.button(f"{i}. {question}", key=f"btn_auto_{i}"):
+                    st.session_state.query = question
+                    st.rerun()
+            
+            if len(st.session_state.system.auto_questions) > 8:
+                with st.expander(f"더 많은 질문 보기 ({len(st.session_state.system.auto_questions)}개)"):
+                    for i, question in enumerate(st.session_state.system.auto_questions[8:], 9):
+                        if st.button(f"{i}. {question}", key=f"btn_auto_{i}"):
+                            st.session_state.query = question
+                            st.rerun()
+        else:
+            # 기본 예시 질문들
+            example_questions = [
+                "Excel 파일 정보를 보여주세요",
+                "BOM 정보는 무엇인가요?",
+                "제품 생산에 필요한 자재는?",
+                "조립 공정도 이미지를 보여주세요",
+                "품질검사 기준은 무엇인가요?"
+            ]
+            
+            for question in example_questions:
+                if st.button(question, key=f"btn_{question}"):
+                    st.session_state.query = question
+                    st.rerun()
     
     # 메인 컨텐츠
     if 'system' not in st.session_state:
