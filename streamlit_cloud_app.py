@@ -32,55 +32,30 @@ class CloudVLMSystem:
     def initialize_system(self):
         """시스템 초기화"""
         try:
-            # Excel 파일에서 이미지 추출
-            self.extract_images_from_excel()
+            # Streamlit Cloud에서는 로컬 파일 접근 불가
+            # 기본 이미지만 생성하고 업로드된 파일 처리 대기
+            self.create_default_images()
             
-            # Excel 파일 처리 (실제 파일 내용 기반)
-            self.process_real_excel_data()
+            # 기본 데이터 초기화
+            self.processed_data = {
+                "시스템 정보": {
+                    "type": "system",
+                    "content": "Excel 파일을 업로드하여 데이터를 처리할 수 있습니다.",
+                    "features": ["파일 업로드", "이미지 추출", "데이터 분석"]
+                }
+            }
             
-            st.success("✅ 시스템 초기화 완료!")
             return True
         except Exception as e:
             st.error(f"❌ 시스템 초기화 중 오류 발생: {str(e)}")
             return False
     
     def extract_images_from_excel(self):
-        """Excel 파일에서 이미지 추출"""
-        try:
-            excel_files = [f for f in os.listdir('.') if f.endswith('.xlsx') and not f.startswith('~$')]
-            
-            for excel_file in excel_files:
-                logger.info(f"Excel 파일에서 이미지 추출 중: {excel_file}")
-                
-                # Excel 파일을 ZIP으로 열기
-                with zipfile.ZipFile(excel_file, 'r') as zip_file:
-                    # 이미지 파일들 찾기
-                    image_files = [f for f in zip_file.namelist() if f.startswith('xl/media/')]
-                    
-                    for image_file in image_files:
-                        try:
-                            # 이미지 파일 읽기
-                            with zip_file.open(image_file) as img_file:
-                                img_data = img_file.read()
-                                img = Image.open(io.BytesIO(img_data))
-                                
-                                # 이미지 이름 추출
-                                img_name = os.path.basename(image_file)
-                                img_name_without_ext = os.path.splitext(img_name)[0]
-                                
-                                # 이미지 저장
-                                self.extracted_images[img_name_without_ext] = img
-                                logger.info(f"이미지 추출 완료: {img_name}")
-                                
-                        except Exception as e:
-                            logger.error(f"이미지 추출 실패 {image_file}: {e}")
-            
-            logger.info(f"총 {len(self.extracted_images)}개 이미지 추출 완료")
-            
-        except Exception as e:
-            logger.error(f"Excel 이미지 추출 실패: {e}")
-            # 이미지가 없으면 기본 이미지 생성
-            self.create_default_images()
+        """Excel 파일에서 이미지 추출 (더 이상 사용하지 않음)"""
+        # Streamlit Cloud에서는 로컬 파일 접근 불가
+        # 업로드된 파일만 처리 가능
+        logger.info("로컬 Excel 파일 접근 불가 - 업로드된 파일만 처리 가능")
+        self.create_default_images()
     
     def extract_images_from_uploaded_file(self, uploaded_file):
         """업로드된 Excel 파일에서 이미지 추출"""
@@ -122,6 +97,52 @@ class CloudVLMSystem:
         except Exception as e:
             logger.error(f"업로드된 Excel 이미지 추출 실패: {e}")
             return 0
+    
+    def process_uploaded_excel_data(self, uploaded_file):
+        """업로드된 Excel 파일 데이터 파싱"""
+        try:
+            # 업로드된 파일을 임시로 저장
+            with open("temp_excel.xlsx", "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            
+            # Excel 파일 읽기
+            df = pd.read_excel("temp_excel.xlsx", sheet_name=None)
+            sheet_info = {}
+            
+            for sheet_name, sheet_df in df.items():
+                # 시트 데이터 요약
+                sheet_info[sheet_name] = {
+                    "rows": len(sheet_df),
+                    "columns": len(sheet_df.columns),
+                    "sample_data": sheet_df.head(5).to_dict('records')
+                }
+            
+            # 처리된 데이터 저장
+            file_name = uploaded_file.name
+            self.processed_data[file_name] = {
+                "type": "excel_file",
+                "content": f"Excel 파일: {file_name}",
+                "sheets": sheet_info,
+                "file_info": {
+                    "name": file_name,
+                    "size": len(uploaded_file.getbuffer()),
+                    "uploaded": datetime.now()
+                }
+            }
+            
+            # 임시 파일 삭제
+            if os.path.exists("temp_excel.xlsx"):
+                os.remove("temp_excel.xlsx")
+            
+            logger.info(f"Excel 파일 데이터 파싱 완료: {file_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Excel 파일 데이터 파싱 실패: {e}")
+            # 임시 파일 정리
+            if os.path.exists("temp_excel.xlsx"):
+                os.remove("temp_excel.xlsx")
+            return False
     
     def create_default_images(self):
         """기본 이미지 생성 (Excel에서 이미지를 찾을 수 없을 때)"""
@@ -258,64 +279,17 @@ class CloudVLMSystem:
         return img
     
     def process_real_excel_data(self):
-        """실제 Excel 파일 내용 기반 데이터 처리"""
-        try:
-            # 범용 Excel 처리 시스템 사용
-            excel_files = [f for f in os.listdir('.') if f.endswith('.xlsx') and not f.startswith('~$')]
-            
-            if excel_files:
-                # 실제 Excel 파일들을 처리
-                for excel_file in excel_files:
-                    logger.info(f"Excel 파일 처리 중: {excel_file}")
-                    try:
-                        df = pd.read_excel(excel_file, sheet_name=None)
-                        sheet_info = {}
-                        
-                        for sheet_name, sheet_df in df.items():
-                            # 시트 데이터 요약
-                            sheet_info[sheet_name] = {
-                                "rows": len(sheet_df),
-                                "columns": len(sheet_df.columns),
-                                "sample_data": sheet_df.head(3).to_dict('records')
-                            }
-                        
-                        self.processed_data[excel_file] = {
-                            "type": "excel_file",
-                            "content": f"Excel 파일: {excel_file}",
-                            "sheets": sheet_info,
-                            "file_info": {
-                                "name": excel_file,
-                                "size": os.path.getsize(excel_file),
-                                "modified": datetime.fromtimestamp(os.path.getmtime(excel_file))
-                            }
-                        }
-                        
-                    except Exception as e:
-                        logger.error(f"Excel 파일 처리 실패 {excel_file}: {e}")
-                        self.processed_data[excel_file] = {
-                            "type": "error",
-                            "content": f"파일 처리 실패: {str(e)}"
-                        }
-            else:
-                # 기본 데이터 (fallback)
-                self.processed_data = {
-                    "시스템 정보": {
-                        "type": "system",
-                        "content": "Excel 파일이 발견되지 않았습니다. 파일을 업로드하여 데이터를 처리할 수 있습니다.",
-                        "features": ["파일 업로드", "이미지 추출", "데이터 분석"]
-                    }
-                }
-                
-        except Exception as e:
-            logger.error(f"Excel 데이터 처리 실패: {e}")
-            # 기본 데이터로 fallback
-            self.processed_data = {
-                "시스템 정보": {
-                    "type": "system",
-                    "content": f"데이터 처리 중 오류 발생: {str(e)}",
-                    "features": ["오류 복구", "기본 모드"]
-                }
+        """실제 Excel 파일 내용 기반 데이터 처리 (더 이상 사용하지 않음)"""
+        # Streamlit Cloud에서는 로컬 파일 접근 불가
+        # 업로드된 파일만 처리 가능
+        logger.info("로컬 Excel 파일 접근 불가 - 업로드된 파일만 처리 가능")
+        self.processed_data = {
+            "시스템 정보": {
+                "type": "system",
+                "content": "Excel 파일을 업로드하여 데이터를 처리할 수 있습니다.",
+                "features": ["파일 업로드", "이미지 추출", "데이터 분석"]
             }
+        }
     
     def query_system(self, query):
         """범용 쿼리 처리"""
@@ -557,15 +531,28 @@ def main():
         )
         
         if uploaded_file is not None:
-            if st.button("📤 이미지 추출", type="primary"):
-                with st.spinner("Excel 파일에서 이미지를 추출하고 있습니다..."):
-                    extracted_count = st.session_state.system.extract_images_from_uploaded_file(uploaded_file)
-                    if extracted_count > 0:
-                        st.success(f"✅ {extracted_count}개 이미지 추출 완료!")
-                    else:
-                        st.warning("⚠️ 이미지를 찾을 수 없습니다. 기본 이미지를 사용합니다.")
-                        st.session_state.system.create_default_images()
-                    st.rerun()
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("📤 이미지 추출", type="primary"):
+                    with st.spinner("Excel 파일에서 이미지를 추출하고 있습니다..."):
+                        extracted_count = st.session_state.system.extract_images_from_uploaded_file(uploaded_file)
+                        if extracted_count > 0:
+                            st.success(f"✅ {extracted_count}개 이미지 추출 완료!")
+                        else:
+                            st.warning("⚠️ 이미지를 찾을 수 없습니다. 기본 이미지를 사용합니다.")
+                            st.session_state.system.create_default_images()
+                        st.rerun()
+            
+            with col2:
+                if st.button("📊 데이터 파싱", type="secondary"):
+                    with st.spinner("Excel 파일을 파싱하고 있습니다..."):
+                        success = st.session_state.system.process_uploaded_excel_data(uploaded_file)
+                        if success:
+                            st.success("✅ Excel 데이터 파싱 완료!")
+                        else:
+                            st.warning("⚠️ 데이터 파싱에 실패했습니다.")
+                        st.rerun()
         
         st.header("📊 Excel 파일 정보")
         
