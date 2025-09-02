@@ -750,8 +750,8 @@ class CloudVLMSystem:
         
         logger.info(f"이미지 매칭 시작: 질문='{query}', 사용 가능한 이미지={list(self.extracted_images.keys())}")
         
-        # 조립도 관련 질문
-        if any(word in query_lower for word in ["조립도", "조립", "공정", "작업", "과정"]):
+        # 조립도 관련 질문 (가장 구체적인 키워드부터 체크)
+        if any(word in query_lower for word in ["조립도", "조립공정", "조립작업", "조립과정"]):
             logger.info("조립도 관련 질문 감지")
             # 조립 관련 이미지 찾기 (image1~30 우선)
             for img_name, img in self.extracted_images.items():
@@ -768,8 +768,43 @@ class CloudVLMSystem:
                         matched_images.append((img_name, img, "조립 관련 이미지", 3))
                         logger.info(f"조립 이미지 매칭: {img_name} (점수: 3)")
         
+        # 검사 관련 질문 (품질 검사 우선)
+        elif any(word in query_lower for word in ["검사", "품질", "테스트", "확인", "검수"]):
+            logger.info("검사 관련 질문 감지")
+            for img_name, img in self.extracted_images.items():
+                if "image" in img_name.lower():
+                    try:
+                        img_num = int(''.join(filter(str.isdigit, img_name)))
+                        if 20 <= img_num <= 50:  # 검사 관련은 중간 이미지
+                            matched_images.append((img_name, img, f"검사 관련 이미지 (번호: {img_num})", 10))
+                            logger.info(f"검사 이미지 매칭: {img_name} (점수: 10)")
+                        else:
+                            matched_images.append((img_name, img, f"검사 관련 이미지 (번호: {img_num})", 5))
+                            logger.info(f"검사 이미지 매칭: {img_name} (점수: 5)")
+                    except:
+                        matched_images.append((img_name, img, "검사 관련 이미지", 3))
+                        logger.info(f"검사 이미지 매칭: {img_name} (점수: 3)")
+        
+        # 부품/도면 관련 질문
+        elif any(word in query_lower for word in ["부품", "도면", "설계", "치수", "BOM"]):
+            logger.info("부품/도면 관련 질문 감지")
+            for img_name, img in self.extracted_images.items():
+                if "image" in img_name.lower():
+                    try:
+                        img_num = int(''.join(filter(str.isdigit, img_name)))
+                        if img_num <= 25:  # 부품도면은 앞쪽 이미지
+                            matched_images.append((img_name, img, f"부품/도면 이미지 (번호: {img_num})", 10))
+                            logger.info(f"부품/도면 이미지 매칭: {img_name} (점수: 10)")
+                        else:
+                            matched_images.append((img_name, img, f"부품/도면 이미지 (번호: {img_num})", 5))
+                            logger.info(f"부품/도면 이미지 매칭: {img_name} (점수: 5)")
+                    except:
+                        matched_images.append((img_name, img, "부품/도면 이미지", 3))
+                        logger.info(f"부품/도면 이미지 매칭: {img_name} (점수: 3)")
+        
         # 제품 관련 질문
-        elif any(word in query_lower for word in ["제품", "안착", "상세", "클로즈업"]):
+        elif any(word in query_lower for word in ["제품", "안착", "상세", "클로즈업", "완성"]):
+            logger.info("제품 관련 질문 감지")
             # 제품 관련 이미지 찾기 (image40+ 우선)
             for img_name, img in self.extracted_images.items():
                 if "image" in img_name.lower():
@@ -777,36 +812,33 @@ class CloudVLMSystem:
                         img_num = int(''.join(filter(str.isdigit, img_name)))
                         if img_num >= 40:  # 제품 관련은 뒤쪽 이미지
                             matched_images.append((img_name, img, f"제품 관련 이미지 (번호: {img_num})", 10))
+                            logger.info(f"제품 이미지 매칭: {img_name} (점수: 10)")
                         else:
                             matched_images.append((img_name, img, f"제품 관련 이미지 (번호: {img_num})", 5))
+                            logger.info(f"제품 이미지 매칭: {img_name} (점수: 5)")
                     except:
                         matched_images.append((img_name, img, "제품 관련 이미지", 3))
+                        logger.info(f"제품 이미지 매칭: {img_name} (점수: 3)")
         
-        # 검사 관련 질문
-        elif any(word in query_lower for word in ["검사", "품질", "테스트", "확인"]):
+        # 일반적인 조립 관련 질문 (마지막에 체크)
+        elif any(word in query_lower for word in ["조립", "공정", "작업", "과정"]):
+            logger.info("일반 조립 관련 질문 감지")
+            # 조립 관련 이미지 찾기 (image1~30 우선)
             for img_name, img in self.extracted_images.items():
                 if "image" in img_name.lower():
                     try:
                         img_num = int(''.join(filter(str.isdigit, img_name)))
-                        if 20 <= img_num <= 50:  # 검사 관련은 중간 이미지
-                            matched_images.append((img_name, img, f"검사 관련 이미지 (번호: {img_num})", 10))
+                        if img_num <= 30:  # 조립도는 보통 앞쪽 이미지
+                            matched_images.append((img_name, img, f"조립 관련 이미지 (번호: {img_num})", 10))
+                            logger.info(f"조립 이미지 매칭: {img_name} (점수: 10)")
                         else:
-                            matched_images.append((img_name, img, f"검사 관련 이미지 (번호: {img_num})", 5))
+                            matched_images.append((img_name, img, f"조립 관련 이미지 (번호: {img_num})", 5))
+                            logger.info(f"조립 이미지 매칭: {img_name} (점수: 5)")
                     except:
-                        matched_images.append((img_name, img, "검사 관련 이미지", 3))
+                        matched_images.append((img_name, img, "조립 관련 이미지", 3))
+                        logger.info(f"조립 이미지 매칭: {img_name} (점수: 3)")
         
-        # 부품/도면 관련 질문
-        elif any(word in query_lower for word in ["부품", "도면", "설계", "치수"]):
-            for img_name, img in self.extracted_images.items():
-                if "image" in img_name.lower():
-                    try:
-                        img_num = int(''.join(filter(str.isdigit, img_name)))
-                        if img_num <= 25:  # 부품도면은 앞쪽 이미지
-                            matched_images.append((img_name, img, f"부품/도면 이미지 (번호: {img_num})", 10))
-                        else:
-                            matched_images.append((img_name, img, f"부품/도면 이미지 (번호: {img_num})", 5))
-                    except:
-                        matched_images.append((img_name, img, "부품/도면 이미지", 3))
+
         
         # 일반적인 이미지 요청
         else:
