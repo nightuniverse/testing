@@ -40,8 +40,8 @@ class CloudVLMSystem:
         """시스템 초기화"""
         try:
             # Streamlit Cloud에서는 로컬 파일 접근 불가
-            # 기본 이미지만 생성하고 업로드된 파일 처리 대기
-            self.create_default_images()
+            # 기본 이미지 생성하지 않고 업로드된 파일 처리 대기
+            self.extracted_images = {}  # 빈 이미지 딕셔너리로 초기화
             
             # 기본 데이터 초기화
             self.processed_data = {
@@ -386,23 +386,11 @@ class CloudVLMSystem:
             self.vector_database = None
     
     def create_default_images(self):
-        """기본 이미지 생성 (Excel에서 이미지를 찾을 수 없을 때)"""
-        try:
-            # 품질검사표 이미지
-            quality_img = self.create_quality_inspection_image()
-            self.extracted_images["품질검사표"] = quality_img
-            
-            # 조립공정도 이미지
-            assembly_img = self.create_assembly_process_image()
-            self.extracted_images["조립공정도"] = assembly_img
-            
-            # 부품도면 이미지
-            part_img = self.create_part_drawing_image()
-            self.extracted_images["부품도면"] = part_img
-            
-            logger.info("기본 이미지 생성 완료")
-        except Exception as e:
-            logger.error(f"기본 이미지 생성 실패: {e}")
+        """기본 이미지 생성 (더 이상 사용하지 않음)"""
+        # 기본 이미지 생성하지 않음
+        # Excel에서 추출된 실제 이미지만 사용
+        logger.info("기본 이미지 생성 비활성화 - Excel 이미지만 사용")
+        pass
     
     def create_quality_inspection_image(self):
         """품질검사표 이미지 생성"""
@@ -742,47 +730,47 @@ class CloudVLMSystem:
             }
     
     def get_image_data(self, query):
-        """이미지 데이터 반환"""
+        """Excel에서 추출된 실제 이미지 데이터 반환"""
         query_lower = query.lower()
         
-        # 추출된 이미지 목록 표시
+        # Excel에서 추출된 이미지가 없으면 안내
         if not self.extracted_images:
             return {
                 "type": "no_image",
                 "title": "🖼️ 이미지 없음",
-                "content": "Excel 파일에서 추출된 이미지가 없습니다.",
-                "available_images": []
+                "content": "Excel 파일에서 추출된 이미지가 없습니다. 먼저 Excel 파일을 업로드하고 '📤 이미지 추출' 버튼을 클릭해주세요.",
+                "available_images": [],
+                "suggestions": ["Excel 파일 업로드", "📤 이미지 추출 버튼 클릭"]
             }
         
-        # 질문에 맞는 이미지 찾기
-        matched_images = []
+        # 질문 키워드 분석 및 우선순위 설정
+        query_keywords = []
+        priority_keywords = []
         
-        # 이미지 이름과 키워드 매핑
-        image_keywords = {
-            "image49": ["제품", "안착", "상세", "클로즈업", "부품"],
-            "image50": ["검사", "장비", "현미경", "지그", "렌즈"],
-            "image51": ["공정", "흐름", "단계", "과정"],
-            "image52": ["품질", "검사", "기준", "절차"],
-            "image53": ["조립", "공정", "작업", "절차"],
-            "image54": ["도면", "부품", "설계", "치수"],
-            "image55": ["검사", "테스트", "확인"],
-            "image56": ["포장", "완성", "최종"]
-        }
+        # 조립도 관련 질문 (최우선)
+        if any(word in query_lower for word in ["조립도", "조립", "공정", "작업"]):
+            priority_keywords.extend(["조립", "공정", "작업", "단계", "과정"])
+            query_keywords.extend(["조립", "공정", "작업", "단계", "과정"])
         
-        # 질문 키워드 분석
-        question_keywords = []
-        if "제품" in query_lower or "안착" in query_lower:
-            question_keywords.extend(["제품", "안착", "상세"])
-        if "검사" in query_lower or "품질" in query_lower:
-            question_keywords.extend(["검사", "품질", "테스트"])
-        if "조립" in query_lower or "공정" in query_lower:
-            question_keywords.extend(["조립", "공정", "작업"])
-        if "부품" in query_lower or "도면" in query_lower:
-            question_keywords.extend(["부품", "도면", "설계"])
-        if "장비" in query_lower or "현미경" in query_lower:
-            question_keywords.extend(["장비", "현미경", "지그"])
-        if "포장" in query_lower or "완성" in query_lower:
-            question_keywords.extend(["포장", "완성", "최종"])
+        # 제품 관련 질문
+        if any(word in query_lower for word in ["제품", "안착", "상세", "클로즈업"]):
+            query_keywords.extend(["제품", "안착", "상세", "클로즈업", "부품"])
+        
+        # 검사 관련 질문
+        if any(word in query_lower for word in ["검사", "품질", "테스트", "확인"]):
+            query_keywords.extend(["검사", "품질", "테스트", "확인", "기준"])
+        
+        # 부품/도면 관련 질문
+        if any(word in query_lower for word in ["부품", "도면", "설계", "치수"]):
+            query_keywords.extend(["부품", "도면", "설계", "치수", "상세"])
+        
+        # 장비 관련 질문
+        if any(word in query_lower for word in ["장비", "현미경", "지그", "렌즈"]):
+            query_keywords.extend(["장비", "현미경", "지그", "렌즈", "도구"])
+        
+        # 포장/완성 관련 질문
+        if any(word in query_lower for word in ["포장", "완성", "최종", "출하"]):
+            query_keywords.extend(["포장", "완성", "최종", "출하", "배송"])
         
         # 매칭 점수 계산
         best_match = None
@@ -792,40 +780,47 @@ class CloudVLMSystem:
             img_name_lower = img_name.lower()
             score = 0
             
-            # 이미지 이름 기반 매칭
-            if img_name in image_keywords:
-                img_keywords = image_keywords[img_name]
-                for q_keyword in question_keywords:
-                    for img_keyword in img_keywords:
-                        if q_keyword in img_keyword or img_keyword in q_keyword:
-                            score += 2  # 높은 점수
+            # 우선순위 키워드 매칭 (높은 점수)
+            for priority_keyword in priority_keywords:
+                if priority_keyword in img_name_lower:
+                    score += 10  # 최우선 점수
+                elif any(priority_keyword in str(img_name) for img_name in self.extracted_images.keys()):
+                    score += 8   # 간접 매칭
             
-            # 직접 키워드 매칭
-            for q_keyword in question_keywords:
-                if q_keyword in img_name_lower:
-                    score += 1
+            # 일반 키워드 매칭
+            for keyword in query_keywords:
+                if keyword in img_name_lower:
+                    score += 5   # 직접 매칭
+                elif any(keyword in str(img_name) for img_name in self.extracted_images.keys()):
+                    score += 3   # 간접 매칭
             
-            # 특별한 매칭 규칙
-            if "제품" in query_lower and "안착" in query_lower and "image49" in img_name_lower:
-                score += 5  # 제품 안착 관련 질문에 image49 우선
-            elif "검사" in query_lower and "장비" in query_lower and "image50" in img_name_lower:
-                score += 5  # 검사 장비 관련 질문에 image50 우선
-            elif "공정" in query_lower and "흐름" in query_lower and "image51" in img_name_lower:
-                score += 5  # 공정 흐름 관련 질문에 image51 우선
+            # 이미지 이름 패턴 매칭
+            if "image" in img_name_lower:
+                # 숫자 기반 우선순위 (조립도는 보통 앞쪽 이미지)
+                try:
+                    img_num = int(''.join(filter(str.isdigit, img_name)))
+                    if "조립" in query_lower and img_num <= 30:  # 조립도는 앞쪽 이미지
+                        score += 3
+                    elif "제품" in query_lower and img_num >= 40:  # 제품 관련은 뒤쪽 이미지
+                        score += 3
+                except:
+                    pass
             
+            # 점수 업데이트
             if score > best_score:
                 best_score = score
-                best_match = (img_name, img, f"매칭 점수: {score}")
+                best_match = (img_name, img, f"매칭 점수: {score} (키워드: {', '.join(query_keywords[:3])})")
         
         # 매칭된 이미지가 있으면 반환
         if best_match and best_score > 0:
             img_name, img, description = best_match
             return {
                 "type": "image",
-                "title": f"🖼️ {img_name}",
+                "title": f"🖼️ {img_name} - {query}",
                 "image": img,
                 "description": description,
-                "all_images": [best_match]
+                "all_images": [best_match],
+                "query_info": f"질문: '{query}'에 대한 최적 매칭 이미지"
             }
         
         # 매칭되는 이미지가 없으면 모든 이미지 목록 표시
@@ -834,7 +829,8 @@ class CloudVLMSystem:
             "title": "🖼️ 사용 가능한 이미지들",
             "content": f"질문 '{query}'에 맞는 이미지를 찾을 수 없습니다. 다음 이미지들이 있습니다:",
             "available_images": list(self.extracted_images.keys()),
-            "all_images": [(name, img, "사용 가능한 이미지") for name, img in self.extracted_images.items()]
+            "all_images": [(name, img, f"이미지: {name}") for name, img in self.extracted_images.items()],
+            "suggestions": ["더 구체적인 질문을 해보세요", "예: '조립 공정도를 보여줘'", "예: '제품 안착 이미지를 보여줘'"]
         }
     
     def get_general_response(self, query):
@@ -883,8 +879,8 @@ def main():
                         if extracted_count > 0:
                             st.success(f"✅ {extracted_count}개 이미지 추출 완료!")
                         else:
-                            st.warning("⚠️ 이미지를 찾을 수 없습니다. 기본 이미지를 사용합니다.")
-                            st.session_state.system.create_default_images()
+                            st.warning("⚠️ Excel 파일에서 이미지를 찾을 수 없습니다.")
+                            st.info("💡 이미지가 포함된 Excel 파일을 업로드해주세요.")
                         st.rerun()
             
             with col2:
