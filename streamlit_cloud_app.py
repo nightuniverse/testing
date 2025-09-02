@@ -259,117 +259,170 @@ class CloudVLMSystem:
     
     def process_real_excel_data(self):
         """실제 Excel 파일 내용 기반 데이터 처리"""
-        self.processed_data = {
-            "조립 공정": {
-                "수입검사": "부품 외관 및 치수 검사",
-                "이오나이저 작업": "이물제거 및 정전기 제거",
-                "DINO 검사": "전장 디노 검사 및 GATE DINO 검사",
-                "CU+SPONGE TAPE 조립": "압착 및 경사압착 작업",
-                "도전 TAPE 검사": "좌우 편심검사",
-                "SPONGE TAPE 검사": "실오라기 육안검사 및 확대경 검사",
-                "출하검사": "100% 및 200% 검사",
-                "포장": "최종 포장 작업"
-            },
-            "제품 정보": {
-                "모델명": "SM-F741U",
-                "제품코드": "GH98-49241A",
-                "부품명": "FRONT DECO SUB",
-                "문서번호": "SK-WI-001",
-                "작성자": "강승지 프로",
-                "작성부서": "개발팀"
-            },
-            "ERP 시스템": {
-                "BOM 정보": "제품 생산에 필요한 자재 확인",
-                "BOM 정전개 현황": "메뉴 - BOM 정보 - 5. BOM 정전개 현황",
-                "자재 관리": "생산에 필요한 자재 현황",
-                "공급업체 정보": "부품 공급업체 관리"
-            },
-            "품질 관리": {
-                "검사 기준": "각 공정별 품질 검사 기준",
-                "검사 항목": "외관, 치수, 기능 검사",
-                "불합격 기준": "품질 기준 미달 시 처리 절차",
-                "검사 기록": "검사 결과 기록 및 관리"
+        try:
+            # 범용 Excel 처리 시스템 사용
+            excel_files = [f for f in os.listdir('.') if f.endswith('.xlsx') and not f.startswith('~$')]
+            
+            if excel_files:
+                # 실제 Excel 파일들을 처리
+                for excel_file in excel_files:
+                    logger.info(f"Excel 파일 처리 중: {excel_file}")
+                    try:
+                        df = pd.read_excel(excel_file, sheet_name=None)
+                        sheet_info = {}
+                        
+                        for sheet_name, sheet_df in df.items():
+                            # 시트 데이터 요약
+                            sheet_info[sheet_name] = {
+                                "rows": len(sheet_df),
+                                "columns": len(sheet_df.columns),
+                                "sample_data": sheet_df.head(3).to_dict('records')
+                            }
+                        
+                        self.processed_data[excel_file] = {
+                            "type": "excel_file",
+                            "content": f"Excel 파일: {excel_file}",
+                            "sheets": sheet_info,
+                            "file_info": {
+                                "name": excel_file,
+                                "size": os.path.getsize(excel_file),
+                                "modified": datetime.fromtimestamp(os.path.getmtime(excel_file))
+                            }
+                        }
+                        
+                    except Exception as e:
+                        logger.error(f"Excel 파일 처리 실패 {excel_file}: {e}")
+                        self.processed_data[excel_file] = {
+                            "type": "error",
+                            "content": f"파일 처리 실패: {str(e)}"
+                        }
+            else:
+                # 기본 데이터 (fallback)
+                self.processed_data = {
+                    "시스템 정보": {
+                        "type": "system",
+                        "content": "Excel 파일이 발견되지 않았습니다. 파일을 업로드하여 데이터를 처리할 수 있습니다.",
+                        "features": ["파일 업로드", "이미지 추출", "데이터 분석"]
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Excel 데이터 처리 실패: {e}")
+            # 기본 데이터로 fallback
+            self.processed_data = {
+                "시스템 정보": {
+                    "type": "system",
+                    "content": f"데이터 처리 중 오류 발생: {str(e)}",
+                    "features": ["오류 복구", "기본 모드"]
+                }
             }
-        }
     
     def query_system(self, query):
-        """쿼리 처리"""
+        """범용 쿼리 처리"""
         query_lower = query.lower()
         
         # 이미지 관련 (우선순위 높임)
         if "이미지" in query_lower or "사진" in query_lower:
             return self.get_image_data(query)
         
-        # 조립 공정 관련
-        elif "조립" in query_lower or "공정" in query_lower:
-            return self.get_assembly_process_data()
+        # Excel 파일 정보 요청
+        if "파일 정보" in query_lower or "excel 파일" in query_lower:
+            return self.get_excel_file_info()
         
-        # 제품 정보 관련
-        elif "제품" in query_lower or "모델" in query_lower:
-            return self.get_product_info_data()
+        # Excel 파일 데이터 검색
+        excel_results = self._search_excel_data(query)
+        if excel_results:
+            return excel_results
         
-        # ERP 시스템 관련
-        elif "erp" in query_lower or "bom" in query_lower or "자재" in query_lower:
-            return self.get_erp_data()
-        
-        # 품질 관리 관련
-        elif "품질" in query_lower or "검사" in query_lower:
-            return self.get_quality_data()
-        
-        else:
-            return self.get_general_response(query)
+        # 일반적인 응답
+        return self.get_general_response(query)
     
-    def get_assembly_process_data(self):
-        """조립 공정 데이터 반환"""
-        data = self.processed_data["조립 공정"]
-        df = pd.DataFrame(list(data.items()), columns=['공정명', '설명'])
-        
-        return {
-            "type": "assembly",
-            "title": "⚙️ SM-F741U 조립 공정",
-            "data": df,
-            "summary": f"총 {len(data)}개 공정",
-            "chart_type": "table"
-        }
+    def _search_excel_data(self, query):
+        """Excel 데이터에서 검색"""
+        try:
+            query_lower = query.lower()
+            results = []
+            
+            for file_name, file_data in self.processed_data.items():
+                if file_data.get("type") == "excel_file":
+                    # 시트별 검색
+                    for sheet_name, sheet_info in file_data.get("sheets", {}).items():
+                        # 샘플 데이터에서 검색
+                        for row_data in sheet_info.get("sample_data", []):
+                            for key, value in row_data.items():
+                                if query_lower in str(value).lower():
+                                    results.append({
+                                        "file": file_name,
+                                        "sheet": sheet_name,
+                                        "data": row_data,
+                                        "match": f"{key}: {value}"
+                                    })
+            
+            if results:
+                # 결과를 DataFrame으로 변환
+                df_data = []
+                for result in results:
+                    df_data.append({
+                        "파일명": result["file"],
+                        "시트명": result["sheet"],
+                        "매칭 데이터": result["match"],
+                        "전체 데이터": str(result["data"])
+                    })
+                
+                df = pd.DataFrame(df_data)
+                
+                return {
+                    "type": "excel_search",
+                    "title": f"🔍 '{query}' 검색 결과",
+                    "data": df,
+                    "summary": f"총 {len(results)}개 결과 발견",
+                    "chart_type": "table"
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Excel 데이터 검색 실패: {e}")
+            return None
     
-    def get_product_info_data(self):
-        """제품 정보 데이터 반환"""
-        data = self.processed_data["제품 정보"]
-        df = pd.DataFrame(list(data.items()), columns=['항목', '내용'])
-        
-        return {
-            "type": "product",
-            "title": "📋 제품 정보",
-            "data": df,
-            "summary": f"모델: {data['모델명']} / 제품코드: {data['제품코드']}",
-            "chart_type": "table"
-        }
-    
-    def get_erp_data(self):
-        """ERP 시스템 데이터 반환"""
-        data = self.processed_data["ERP 시스템"]
-        df = pd.DataFrame(list(data.items()), columns=['시스템', '기능'])
-        
-        return {
-            "type": "erp",
-            "title": "💻 ERP 시스템 정보",
-            "data": df,
-            "summary": "제품 생산에 필요한 자재 관리 시스템",
-            "chart_type": "table"
-        }
-    
-    def get_quality_data(self):
-        """품질 관리 데이터 반환"""
-        data = self.processed_data["품질 관리"]
-        df = pd.DataFrame(list(data.items()), columns=['항목', '내용'])
-        
-        return {
-            "type": "quality",
-            "title": "🔍 품질 관리",
-            "data": df,
-            "summary": "각 공정별 품질 검사 기준 및 절차",
-            "chart_type": "table"
-        }
+    def get_excel_file_info(self):
+        """Excel 파일 정보 반환"""
+        try:
+            file_info = []
+            for file_name, file_data in self.processed_data.items():
+                if file_data.get("type") == "excel_file":
+                    info = {
+                        "파일명": file_name,
+                        "시트 수": len(file_data.get("sheets", {})),
+                        "이미지 수": len(file_data.get("images", {})),
+                        "파일 크기": f"{file_data.get('file_info', {}).get('size', 0) / 1024:.1f} KB",
+                        "수정일": str(file_data.get('file_info', {}).get('modified', 'N/A'))
+                    }
+                    file_info.append(info)
+            
+            if file_info:
+                df = pd.DataFrame(file_info)
+                return {
+                    "type": "file_info",
+                    "title": "📁 Excel 파일 정보",
+                    "data": df,
+                    "summary": f"총 {len(file_info)}개 Excel 파일",
+                    "chart_type": "table"
+                }
+            else:
+                return {
+                    "type": "no_files",
+                    "title": "📁 Excel 파일 없음",
+                    "content": "처리된 Excel 파일이 없습니다. 파일을 업로드해주세요."
+                }
+                
+        except Exception as e:
+            logger.error(f"파일 정보 생성 실패: {e}")
+            return {
+                "type": "error",
+                "title": "❌ 오류",
+                "content": f"파일 정보를 가져오는 중 오류가 발생했습니다: {str(e)}"
+            }
     
     def get_image_data(self, query):
         """이미지 데이터 반환"""
@@ -514,14 +567,20 @@ def main():
                         st.session_state.system.create_default_images()
                     st.rerun()
         
+        st.header("📊 Excel 파일 정보")
+        
+        if st.button("📁 파일 정보 보기", key="btn_file_info"):
+            st.session_state.query = "Excel 파일 정보를 보여주세요"
+            st.rerun()
+        
         st.header("📝 예시 질문들")
         
         example_questions = [
-            "조립 공정은 어떤 것들이 있나요?",
-            "제품 정보를 알려주세요",
-            "ERP 시스템 기능은 무엇인가요?",
-            "품질 검사 기준은 무엇인가요?",
-            "조립 공정도 이미지를 보여주세요"
+            "Excel 파일 정보를 보여주세요",
+            "BOM 정보는 무엇인가요?",
+            "제품 생산에 필요한 자재는?",
+            "조립 공정도 이미지를 보여주세요",
+            "품질검사 기준은 무엇인가요?"
         ]
         
         for question in example_questions:
@@ -657,6 +716,33 @@ def display_result(result):
             st.write("📋 사용 가능한 이미지:")
             for img_name in result["available_images"]:
                 st.write(f"- {img_name}")
+    
+    elif result["type"] == "excel_search":
+        st.subheader(result["title"])
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.dataframe(result["data"], use_container_width=True)
+        
+        with col2:
+            st.metric("검색 결과", result["summary"])
+            st.info("Excel 파일에서 찾은 데이터")
+    
+    elif result["type"] == "file_info":
+        st.subheader(result["title"])
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.dataframe(result["data"], use_container_width=True)
+        
+        with col2:
+            st.metric("파일 수", result["summary"])
+            st.info("처리된 Excel 파일 정보")
+    
+    elif result["type"] == "no_files":
+        st.subheader(result["title"])
+        st.write(result["content"])
+        st.info("📤 Excel 파일을 업로드하여 데이터를 처리할 수 있습니다.")
     
     elif result["type"] == "general":
         st.subheader(result["title"])
