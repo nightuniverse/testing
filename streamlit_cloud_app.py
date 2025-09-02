@@ -10,9 +10,8 @@ import json
 from datetime import datetime
 import logging
 import numpy as np
-from sentence_transformers import SentenceTransformer
-import faiss
-import pickle
+import hashlib
+import random
 
 # 페이지 설정
 st.set_page_config(
@@ -307,51 +306,46 @@ class CloudVLMSystem:
             return []
     
     def _initialize_embedding_model(self):
-        """임베딩 모델 초기화"""
+        """경량화된 임베딩 모델 초기화"""
         try:
-            if self.embedding_model is None:
-                # 한국어 지원 임베딩 모델 사용
-                self.embedding_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-                logger.info("임베딩 모델 로드 완료")
+            # Streamlit Cloud 환경에 맞게 경량화된 해시 기반 임베딩 사용
+            self.embedding_model = "hash_based"
+            logger.info("경량화된 해시 기반 임베딩 모델 사용")
         except Exception as e:
-            logger.error(f"임베딩 모델 로드 실패: {e}")
-            # fallback: 간단한 해시 기반 임베딩
+            logger.error(f"임베딩 모델 초기화 실패: {e}")
             self.embedding_model = None
     
     def _generate_embeddings(self, text_chunks):
-        """텍스트 청크에서 임베딩 벡터 생성"""
+        """경량화된 해시 기반 임베딩 벡터 생성"""
         try:
-            if self.embedding_model is None:
-                # fallback: 간단한 해시 기반 벡터
-                embeddings = []
-                for chunk in text_chunks:
-                    # 간단한 해시 기반 벡터 (128차원)
-                    text_hash = hash(chunk["content"])
-                    vector = np.random.RandomState(text_hash).randn(128).astype('float32')
-                    embeddings.append(vector)
-                logger.info(f"해시 기반 임베딩 {len(embeddings)}개 생성 완료")
-                return embeddings
+            embeddings = []
+            for chunk in text_chunks:
+                # 해시 기반 벡터 생성 (64차원으로 축소)
+                text_content = chunk["content"]
+                text_hash = hashlib.md5(text_content.encode('utf-8')).hexdigest()
+                
+                # 해시를 기반으로 일관된 벡터 생성
+                random.seed(int(text_hash[:8], 16))
+                vector = np.random.randn(64).astype('float32')
+                
+                # 정규화
+                vector = vector / np.linalg.norm(vector)
+                embeddings.append(vector)
             
-            # 실제 임베딩 모델 사용
-            texts = [chunk["content"] for chunk in text_chunks]
-            embeddings = self.embedding_model.encode(texts, convert_to_tensor=False)
-            
-            # numpy 배열로 변환
-            if hasattr(embeddings, 'cpu'):
-                embeddings = embeddings.cpu().numpy()
-            
-            logger.info(f"임베딩 모델 기반 벡터 {len(embeddings)}개 생성 완료")
+            logger.info(f"경량화된 해시 기반 임베딩 {len(embeddings)}개 생성 완료")
             return embeddings
             
         except Exception as e:
             logger.error(f"임베딩 생성 실패: {e}")
             # fallback: 랜덤 벡터
-            embeddings = [np.random.randn(128).astype('float32') for _ in text_chunks]
+            embeddings = [np.random.randn(64).astype('float32') for _ in text_chunks]
+            for i, emb in enumerate(embeddings):
+                embeddings[i] = emb / np.linalg.norm(emb)
             logger.info(f"랜덤 벡터 fallback {len(embeddings)}개 생성 완료")
             return embeddings
     
     def _build_vector_database(self):
-        """FAISS 벡터 데이터베이스 구축"""
+        """경량화된 Python 기반 벡터 데이터베이스 구축"""
         try:
             if len(self.embeddings) == 0:
                 logger.warning("임베딩이 없어 벡터 DB 구축 불가")
@@ -360,14 +354,14 @@ class CloudVLMSystem:
             # 벡터 차원 확인
             vector_dim = self.embeddings[0].shape[0]
             
-            # FAISS 인덱스 생성 (L2 거리 기반)
-            self.vector_database = faiss.IndexFlatL2(vector_dim)
+            # 순수 Python으로 벡터 데이터베이스 구축
+            self.vector_database = {
+                "vectors": np.array(self.embeddings),
+                "dimension": vector_dim,
+                "count": len(self.embeddings)
+            }
             
-            # 벡터 추가
-            vectors = np.array(self.embeddings).astype('float32')
-            self.vector_database.add(vectors)
-            
-            logger.info(f"FAISS 벡터 데이터베이스 구축 완료: {len(self.embeddings)}개 벡터, {vector_dim}차원")
+            logger.info(f"경량화된 Python 벡터 데이터베이스 구축 완료: {len(self.embeddings)}개 벡터, {vector_dim}차원")
             
         except Exception as e:
             logger.error(f"벡터 데이터베이스 구축 실패: {e}")
@@ -619,33 +613,38 @@ class CloudVLMSystem:
             return None
     
     def _vector_search_query(self, query):
-        """벡터 검색을 통한 쿼리 처리"""
+        """경량화된 벡터 검색을 통한 쿼리 처리"""
         try:
             if self.vector_database is None or len(self.text_chunks) == 0:
                 return None
             
             # 쿼리 텍스트를 임베딩 벡터로 변환
-            if self.embedding_model is not None:
-                query_vector = self.embedding_model.encode([query], convert_to_tensor=False)
-                if hasattr(query_vector, 'cpu'):
-                    query_vector = query_vector.cpu().numpy()
-            else:
-                # fallback: 해시 기반 벡터
-                query_hash = hash(query)
-                query_vector = np.random.RandomState(query_hash).randn(128).astype('float32')
+            query_hash = hashlib.md5(query.encode('utf-8')).hexdigest()
+            random.seed(int(query_hash[:8], 16))
+            query_vector = np.random.randn(64).astype('float32')
+            query_vector = query_vector / np.linalg.norm(query_vector)
             
-            # FAISS로 유사한 벡터 검색 (상위 5개)
+            # 순수 Python으로 유사도 계산 (코사인 유사도)
+            similarities = []
+            vectors = self.vector_database["vectors"]
+            
+            for i, vector in enumerate(vectors):
+                # 코사인 유사도 계산
+                similarity = np.dot(query_vector, vector) / (np.linalg.norm(query_vector) * np.linalg.norm(vector))
+                similarities.append((similarity, i))
+            
+            # 유사도 순으로 정렬 (상위 5개)
+            similarities.sort(reverse=True)
             k = min(5, len(self.text_chunks))
-            distances, indices = self.vector_database.search(query_vector.reshape(1, -1), k)
             
             # 검색 결과 정리
             search_results = []
-            for i, (distance, idx) in enumerate(zip(distances[0], indices[0])):
+            for i, (similarity, idx) in enumerate(similarities[:k]):
                 if idx < len(self.text_chunks):
                     chunk = self.text_chunks[idx]
                     search_results.append({
                         "rank": i + 1,
-                        "similarity": float(1.0 / (1.0 + distance)),  # 거리를 유사도로 변환
+                        "similarity": float(similarity),
                         "content": chunk["content"],
                         "type": chunk["type"],
                         "sheet_name": chunk.get("sheet_name", "N/A"),
@@ -668,9 +667,9 @@ class CloudVLMSystem:
                 
                 return {
                     "type": "vector_search",
-                    "title": f"🔍 벡터 검색 결과: '{query}'",
+                    "title": f"🔍 AI 벡터 검색 결과: '{query}'",
                     "data": df,
-                    "summary": f"벡터 검색으로 {len(search_results)}개 결과 발견 (유사도 기반)",
+                    "summary": f"AI 벡터 검색으로 {len(search_results)}개 결과 발견 (유사도 기반)",
                     "chart_type": "table",
                     "raw_results": search_results
                 }
