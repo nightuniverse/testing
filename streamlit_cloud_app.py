@@ -521,29 +521,31 @@ class CloudVLMSystem:
         }
     
     def query_system(self, query):
-        """벡터 검색 기반 범용 쿼리 처리"""
+        """개선된 쿼리 처리 시스템"""
         query_lower = query.lower()
         
-        # 이미지 관련 (우선순위 높임)
-        if "이미지" in query_lower or "사진" in query_lower:
-            return self.get_image_data(query)
+        # 1. 이미지 관련 질문 (최우선)
+        if any(keyword in query_lower for keyword in ["이미지", "사진", "그림", "보여", "출력", "조립도", "도면"]):
+            image_result = self.get_image_data(query)
+            if image_result and image_result.get("type") != "no_image":
+                return image_result
         
-        # Excel 파일 정보 요청
+        # 2. Excel 파일 정보 요청
         if "파일 정보" in query_lower or "excel 파일" in query_lower:
             return self.get_excel_file_info()
         
-        # 벡터 데이터베이스가 구축되어 있으면 벡터 검색 수행
+        # 3. 벡터 데이터베이스 검색 (AI 기반)
         if self.vector_database is not None and len(self.text_chunks) > 0:
             vector_results = self._vector_search_query(query)
             if vector_results:
                 return vector_results
         
-        # Excel 파일 데이터 검색 (fallback)
+        # 4. Excel 데이터 직접 검색 (fallback)
         excel_results = self._search_excel_data(query)
         if excel_results:
             return excel_results
         
-        # 일반적인 응답
+        # 5. 일반적인 응답
         return self.get_general_response(query)
     
     def _search_excel_data(self, query):
@@ -730,7 +732,7 @@ class CloudVLMSystem:
             }
     
     def get_image_data(self, query):
-        """Excel에서 추출된 실제 이미지 데이터 반환"""
+        """간단하고 효과적인 이미지 매칭 시스템"""
         query_lower = query.lower()
         
         # Excel에서 추출된 이미지가 없으면 안내
@@ -743,84 +745,94 @@ class CloudVLMSystem:
                 "suggestions": ["Excel 파일 업로드", "📤 이미지 추출 버튼 클릭"]
             }
         
-        # 질문 키워드 분석 및 우선순위 설정
-        query_keywords = []
-        priority_keywords = []
+        # 간단한 키워드 매칭 시스템
+        matched_images = []
         
-        # 조립도 관련 질문 (최우선)
-        if any(word in query_lower for word in ["조립도", "조립", "공정", "작업"]):
-            priority_keywords.extend(["조립", "공정", "작업", "단계", "과정"])
-            query_keywords.extend(["조립", "공정", "작업", "단계", "과정"])
+        logger.info(f"이미지 매칭 시작: 질문='{query}', 사용 가능한 이미지={list(self.extracted_images.keys())}")
+        
+        # 조립도 관련 질문
+        if any(word in query_lower for word in ["조립도", "조립", "공정", "작업", "과정"]):
+            logger.info("조립도 관련 질문 감지")
+            # 조립 관련 이미지 찾기 (image1~30 우선)
+            for img_name, img in self.extracted_images.items():
+                if "image" in img_name.lower():
+                    try:
+                        img_num = int(''.join(filter(str.isdigit, img_name)))
+                        if img_num <= 30:  # 조립도는 보통 앞쪽 이미지
+                            matched_images.append((img_name, img, f"조립 관련 이미지 (번호: {img_num})", 10))
+                            logger.info(f"조립 이미지 매칭: {img_name} (점수: 10)")
+                        else:
+                            matched_images.append((img_name, img, f"조립 관련 이미지 (번호: {img_num})", 5))
+                            logger.info(f"조립 이미지 매칭: {img_name} (점수: 5)")
+                    except:
+                        matched_images.append((img_name, img, "조립 관련 이미지", 3))
+                        logger.info(f"조립 이미지 매칭: {img_name} (점수: 3)")
         
         # 제품 관련 질문
-        if any(word in query_lower for word in ["제품", "안착", "상세", "클로즈업"]):
-            query_keywords.extend(["제품", "안착", "상세", "클로즈업", "부품"])
+        elif any(word in query_lower for word in ["제품", "안착", "상세", "클로즈업"]):
+            # 제품 관련 이미지 찾기 (image40+ 우선)
+            for img_name, img in self.extracted_images.items():
+                if "image" in img_name.lower():
+                    try:
+                        img_num = int(''.join(filter(str.isdigit, img_name)))
+                        if img_num >= 40:  # 제품 관련은 뒤쪽 이미지
+                            matched_images.append((img_name, img, f"제품 관련 이미지 (번호: {img_num})", 10))
+                        else:
+                            matched_images.append((img_name, img, f"제품 관련 이미지 (번호: {img_num})", 5))
+                    except:
+                        matched_images.append((img_name, img, "제품 관련 이미지", 3))
         
         # 검사 관련 질문
-        if any(word in query_lower for word in ["검사", "품질", "테스트", "확인"]):
-            query_keywords.extend(["검사", "품질", "테스트", "확인", "기준"])
+        elif any(word in query_lower for word in ["검사", "품질", "테스트", "확인"]):
+            for img_name, img in self.extracted_images.items():
+                if "image" in img_name.lower():
+                    try:
+                        img_num = int(''.join(filter(str.isdigit, img_name)))
+                        if 20 <= img_num <= 50:  # 검사 관련은 중간 이미지
+                            matched_images.append((img_name, img, f"검사 관련 이미지 (번호: {img_num})", 10))
+                        else:
+                            matched_images.append((img_name, img, f"검사 관련 이미지 (번호: {img_num})", 5))
+                    except:
+                        matched_images.append((img_name, img, "검사 관련 이미지", 3))
         
         # 부품/도면 관련 질문
-        if any(word in query_lower for word in ["부품", "도면", "설계", "치수"]):
-            query_keywords.extend(["부품", "도면", "설계", "치수", "상세"])
+        elif any(word in query_lower for word in ["부품", "도면", "설계", "치수"]):
+            for img_name, img in self.extracted_images.items():
+                if "image" in img_name.lower():
+                    try:
+                        img_num = int(''.join(filter(str.isdigit, img_name)))
+                        if img_num <= 25:  # 부품도면은 앞쪽 이미지
+                            matched_images.append((img_name, img, f"부품/도면 이미지 (번호: {img_num})", 10))
+                        else:
+                            matched_images.append((img_name, img, f"부품/도면 이미지 (번호: {img_num})", 5))
+                    except:
+                        matched_images.append((img_name, img, "부품/도면 이미지", 3))
         
-        # 장비 관련 질문
-        if any(word in query_lower for word in ["장비", "현미경", "지그", "렌즈"]):
-            query_keywords.extend(["장비", "현미경", "지그", "렌즈", "도구"])
+        # 일반적인 이미지 요청
+        else:
+            # 모든 이미지를 점수와 함께 추가
+            for img_name, img in self.extracted_images.items():
+                matched_images.append((img_name, img, f"이미지: {img_name}", 1))
         
-        # 포장/완성 관련 질문
-        if any(word in query_lower for word in ["포장", "완성", "최종", "출하"]):
-            query_keywords.extend(["포장", "완성", "최종", "출하", "배송"])
+        # 점수 순으로 정렬
+        matched_images.sort(key=lambda x: x[3], reverse=True)
         
-        # 매칭 점수 계산
-        best_match = None
-        best_score = 0
+        logger.info(f"이미지 매칭 완료: 총 {len(matched_images)}개 매칭, 상위 3개: {[(name, score) for name, img, desc, score in matched_images[:3]]}")
         
-        for img_name, img in self.extracted_images.items():
-            img_name_lower = img_name.lower()
-            score = 0
+        # 최고 점수 이미지 반환
+        if matched_images:
+            best_img_name, best_img, best_desc, best_score = matched_images[0]
             
-            # 우선순위 키워드 매칭 (높은 점수)
-            for priority_keyword in priority_keywords:
-                if priority_keyword in img_name_lower:
-                    score += 10  # 최우선 점수
-                elif any(priority_keyword in str(img_name) for img_name in self.extracted_images.keys()):
-                    score += 8   # 간접 매칭
+            logger.info(f"최적 이미지 선택: {best_img_name} (점수: {best_score})")
             
-            # 일반 키워드 매칭
-            for keyword in query_keywords:
-                if keyword in img_name_lower:
-                    score += 5   # 직접 매칭
-                elif any(keyword in str(img_name) for img_name in self.extracted_images.keys()):
-                    score += 3   # 간접 매칭
-            
-            # 이미지 이름 패턴 매칭
-            if "image" in img_name_lower:
-                # 숫자 기반 우선순위 (조립도는 보통 앞쪽 이미지)
-                try:
-                    img_num = int(''.join(filter(str.isdigit, img_name)))
-                    if "조립" in query_lower and img_num <= 30:  # 조립도는 앞쪽 이미지
-                        score += 3
-                    elif "제품" in query_lower and img_num >= 40:  # 제품 관련은 뒤쪽 이미지
-                        score += 3
-                except:
-                    pass
-            
-            # 점수 업데이트
-            if score > best_score:
-                best_score = score
-                best_match = (img_name, img, f"매칭 점수: {score} (키워드: {', '.join(query_keywords[:3])})")
-        
-        # 매칭된 이미지가 있으면 반환
-        if best_match and best_score > 0:
-            img_name, img, description = best_match
             return {
                 "type": "image",
-                "title": f"🖼️ {img_name} - {query}",
-                "image": img,
-                "description": description,
-                "all_images": [best_match],
-                "query_info": f"질문: '{query}'에 대한 최적 매칭 이미지"
+                "title": f"🖼️ {best_img_name} - {query}",
+                "image": best_img,
+                "description": best_desc,
+                "all_images": [(name, img, desc) for name, img, desc, score in matched_images[:3]],  # 상위 3개
+                "query_info": f"질문: '{query}'에 대한 최적 매칭 이미지 (점수: {best_score})",
+                "total_matches": len(matched_images)
             }
         
         # 매칭되는 이미지가 없으면 모든 이미지 목록 표시
@@ -830,7 +842,12 @@ class CloudVLMSystem:
             "content": f"질문 '{query}'에 맞는 이미지를 찾을 수 없습니다. 다음 이미지들이 있습니다:",
             "available_images": list(self.extracted_images.keys()),
             "all_images": [(name, img, f"이미지: {name}") for name, img in self.extracted_images.items()],
-            "suggestions": ["더 구체적인 질문을 해보세요", "예: '조립 공정도를 보여줘'", "예: '제품 안착 이미지를 보여줘'"]
+            "suggestions": [
+                "더 구체적인 질문을 해보세요",
+                "예: '조립 공정도를 보여줘'",
+                "예: '제품 안착 이미지를 보여줘'",
+                "예: '품질 검사 과정을 보여줘'"
+            ]
         }
     
     def get_general_response(self, query):
