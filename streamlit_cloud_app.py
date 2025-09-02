@@ -1717,7 +1717,6 @@ def display_result(result):
         st.subheader(result["title"])
         
         # 이미지를 바이트로 변환하여 표시
-        import io
         img_byte_arr = io.BytesIO()
         result["image"].save(img_byte_arr, format='PNG')
         img_byte_arr = img_byte_arr.getvalue()
