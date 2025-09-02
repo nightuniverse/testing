@@ -12,8 +12,16 @@ import logging
 import numpy as np
 import hashlib
 import random
-import openai
 import requests
+
+# OpenAI 패키지 import 시도 (Streamlit Cloud 호환성)
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    openai = None
+    OPENAI_AVAILABLE = False
+    st.warning("⚠️ OpenAI 패키지를 불러올 수 없습니다. 시뮬레이션 모드로 실행됩니다.")
 
 # 페이지 설정
 st.set_page_config(
@@ -47,6 +55,12 @@ class LLMIntegration:
     def initialize_llm_clients(self):
         """LLM 클라이언트 초기화"""
         try:
+            # OpenAI 패키지 사용 가능 여부 확인
+            if not OPENAI_AVAILABLE:
+                logger.warning("⚠️ OpenAI 패키지를 사용할 수 없습니다. 시뮬레이션 모드로 전환합니다.")
+                self.gpt_oss_client = None
+                return
+            
             # API 키 유효성 검사
             if not GPT_OSS_API_KEY or GPT_OSS_API_KEY.startswith("sk-or-v1-"):
                 logger.warning("⚠️ 유효하지 않은 API 키 형식. 시뮬레이션 모드로 전환합니다.")
@@ -196,7 +210,8 @@ class LLMIntegration:
         """사용 가능한 LLM 모델 목록 반환"""
         models = []
         
-        if self.gpt_oss_client:
+        # OpenAI 패키지 사용 가능 여부 확인
+        if OPENAI_AVAILABLE and self.gpt_oss_client:
             models.append("GPT OSS 120B")
         
         # Qwen3는 항상 사용 가능 (API 호출 시도)
@@ -1492,7 +1507,9 @@ def main():
         
         # LLM 상태 표시
         if selected_model == "GPT OSS 120B":
-            if st.session_state.system.llm_integration.gpt_oss_client:
+            if not OPENAI_AVAILABLE:
+                st.error("❌ OpenAI 패키지를 사용할 수 없습니다. 패키지 설치가 필요합니다.")
+            elif st.session_state.system.llm_integration.gpt_oss_client:
                 st.success("✅ GPT OSS 120B 모델 활성화 (API 연결됨)")
             else:
                 st.error("❌ GPT OSS 120B 모델 비활성화 (API 연결 실패)")
@@ -1500,6 +1517,12 @@ def main():
             st.warning("⚠️ Qwen3 모델 (API 연결 테스트 필요)")
         else:
             st.info("ℹ️ 시뮬레이션 모드 (실제 LLM 사용 안함)")
+        
+        # 패키지 상태 표시
+        if not OPENAI_AVAILABLE:
+            st.error("❌ OpenAI 패키지가 설치되지 않았습니다. requirements.txt를 확인해주세요.")
+        else:
+            st.success("✅ OpenAI 패키지 사용 가능")
         
         # API 키 상태 표시
         if GPT_OSS_API_KEY.startswith("sk-or-v1-"):
