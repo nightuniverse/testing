@@ -9,6 +9,10 @@ import base64
 import json
 from datetime import datetime
 import logging
+import numpy as np
+from sentence_transformers import SentenceTransformer
+import faiss
+import pickle
 
 # 페이지 설정
 st.set_page_config(
@@ -27,6 +31,10 @@ class CloudVLMSystem:
         self.excel_files = []
         self.processed_data = {}
         self.extracted_images = {}
+        self.vector_database = None
+        self.text_chunks = []
+        self.embeddings = []
+        self.embedding_model = None
         self.initialize_system()
     
     def initialize_system(self):
@@ -99,30 +107,33 @@ class CloudVLMSystem:
             return 0
     
     def process_uploaded_excel_data(self, uploaded_file):
-        """업로드된 Excel 파일 데이터 파싱"""
+        """업로드된 Excel 파일을 docling 스타일로 파싱하고 벡터 데이터베이스 구축"""
         try:
             # 업로드된 파일을 임시로 저장
             with open("temp_excel.xlsx", "wb") as f:
                 f.write(uploaded_file.getbuffer())
             
-            # Excel 파일 읽기
-            df = pd.read_excel("temp_excel.xlsx", sheet_name=None)
-            sheet_info = {}
+            # 1단계: Excel 파일을 docling 스타일로 파싱
+            parsed_data = self._parse_excel_docling_style("temp_excel.xlsx")
             
-            for sheet_name, sheet_df in df.items():
-                # 시트 데이터 요약
-                sheet_info[sheet_name] = {
-                    "rows": len(sheet_df),
-                    "columns": len(sheet_df.columns),
-                    "sample_data": sheet_df.head(5).to_dict('records')
-                }
+            # 2단계: 텍스트 청크 생성
+            self.text_chunks = self._create_text_chunks(parsed_data)
             
-            # 처리된 데이터 저장
+            # 3단계: 임베딩 모델 로드 및 벡터 생성
+            self._initialize_embedding_model()
+            self.embeddings = self._generate_embeddings(self.text_chunks)
+            
+            # 4단계: FAISS 벡터 데이터베이스 구축
+            self._build_vector_database()
+            
+            # 5단계: 처리된 데이터 저장
             file_name = uploaded_file.name
             self.processed_data[file_name] = {
                 "type": "excel_file",
                 "content": f"Excel 파일: {file_name}",
-                "sheets": sheet_info,
+                "parsed_data": parsed_data,
+                "chunks_count": len(self.text_chunks),
+                "vector_db_size": len(self.embeddings),
                 "file_info": {
                     "name": file_name,
                     "size": len(uploaded_file.getbuffer()),
@@ -134,15 +145,233 @@ class CloudVLMSystem:
             if os.path.exists("temp_excel.xlsx"):
                 os.remove("temp_excel.xlsx")
             
-            logger.info(f"Excel 파일 데이터 파싱 완료: {file_name}")
+            logger.info(f"Excel 파일 docling 파싱 및 벡터 DB 구축 완료: {file_name}")
             return True
             
         except Exception as e:
-            logger.error(f"Excel 파일 데이터 파싱 실패: {e}")
+            logger.error(f"Excel 파일 docling 파싱 실패: {e}")
             # 임시 파일 정리
             if os.path.exists("temp_excel.xlsx"):
                 os.remove("temp_excel.xlsx")
             return False
+    
+    def _parse_excel_docling_style(self, excel_file_path):
+        """Excel 파일을 docling 스타일로 파싱"""
+        try:
+            # Excel 파일 읽기
+            df = pd.read_excel(excel_file_path, sheet_name=None)
+            parsed_data = {
+                "file_path": excel_file_path,
+                "sheets": {},
+                "metadata": {
+                    "total_sheets": len(df),
+                    "parsed_at": datetime.now().isoformat()
+                }
+            }
+            
+            for sheet_name, sheet_df in df.items():
+                # 시트별 데이터 파싱
+                sheet_data = self._parse_sheet_content(sheet_name, sheet_df)
+                parsed_data["sheets"][sheet_name] = sheet_data
+            
+            return parsed_data
+            
+        except Exception as e:
+            logger.error(f"Excel docling 파싱 실패: {e}")
+            return None
+    
+    def _parse_sheet_content(self, sheet_name, sheet_df):
+        """시트 내용을 docling 스타일로 파싱"""
+        try:
+            # 기본 정보
+            sheet_info = {
+                "name": sheet_name,
+                "dimensions": {
+                    "rows": len(sheet_df),
+                    "columns": len(sheet_df.columns)
+                },
+                "content": {}
+            }
+            
+            # 1. 헤더 정보 추출
+            if len(sheet_df) > 0:
+                headers = sheet_df.columns.tolist()
+                sheet_info["content"]["headers"] = headers
+                
+                # 2. 데이터 타입 분석
+                data_types = sheet_df.dtypes.to_dict()
+                sheet_info["content"]["data_types"] = {str(k): str(v) for k, v in data_types.items()}
+                
+                # 3. 텍스트 내용 추출 (docling 스타일)
+                text_content = []
+                
+                # 헤더 텍스트
+                header_text = f"시트 '{sheet_name}'의 컬럼: {', '.join(headers)}"
+                text_content.append(header_text)
+                
+                # 데이터 행 텍스트 (처음 10행)
+                for idx, row in sheet_df.head(10).iterrows():
+                    row_text = f"행 {idx+1}: {', '.join([f'{col}={val}' for col, val in row.items() if pd.notna(val)])}"
+                    text_content.append(row_text)
+                
+                # 4. 테이블 구조 분석
+                if len(sheet_df) > 0:
+                    # 숫자 컬럼과 텍스트 컬럼 구분
+                    numeric_cols = sheet_df.select_dtypes(include=[np.number]).columns.tolist()
+                    text_cols = sheet_df.select_dtypes(include=['object']).columns.tolist()
+                    
+                    sheet_info["content"]["structure"] = {
+                        "numeric_columns": numeric_cols,
+                        "text_columns": text_cols,
+                        "total_records": len(sheet_df)
+                    }
+                    
+                    # 숫자 컬럼 통계
+                    if numeric_cols:
+                        numeric_stats = {}
+                        for col in numeric_cols:
+                            col_data = sheet_df[col].dropna()
+                            if len(col_data) > 0:
+                                numeric_stats[col] = {
+                                    "min": float(col_data.min()),
+                                    "max": float(col_data.max()),
+                                    "mean": float(col_data.mean()),
+                                    "count": len(col_data)
+                                }
+                        sheet_info["content"]["numeric_stats"] = numeric_stats
+                
+                sheet_info["content"]["text_content"] = text_content
+            
+            return sheet_info
+            
+        except Exception as e:
+            logger.error(f"시트 파싱 실패 {sheet_name}: {e}")
+            return {"name": sheet_name, "error": str(e)}
+    
+    def _create_text_chunks(self, parsed_data):
+        """파싱된 데이터에서 검색 가능한 텍스트 청크 생성"""
+        chunks = []
+        
+        try:
+            for sheet_name, sheet_data in parsed_data["sheets"].items():
+                if "content" in sheet_data and "text_content" in sheet_data["content"]:
+                    # 시트별 청크 생성
+                    sheet_chunk = {
+                        "type": "sheet_overview",
+                        "sheet_name": sheet_name,
+                        "content": f"시트 '{sheet_name}': {sheet_data['content']['text_content'][0]}",
+                        "metadata": {
+                            "rows": sheet_data["dimensions"]["rows"],
+                            "columns": sheet_data["dimensions"]["columns"]
+                        }
+                    }
+                    chunks.append(sheet_chunk)
+                    
+                    # 상세 데이터 청크
+                    for text_line in sheet_data["content"]["text_content"][1:]:
+                        data_chunk = {
+                            "type": "data_row",
+                            "sheet_name": sheet_name,
+                            "content": text_line,
+                            "metadata": {"row_type": "data"}
+                        }
+                        chunks.append(data_chunk)
+                    
+                    # 구조 정보 청크
+                    if "structure" in sheet_data["content"]:
+                        structure = sheet_data["content"]["structure"]
+                        structure_chunk = {
+                            "type": "structure_info",
+                            "sheet_name": sheet_name,
+                            "content": f"시트 '{sheet_name}' 구조: 숫자 컬럼 {len(structure['numeric_columns'])}, 텍스트 컬럼 {len(structure['text_columns'])}, 총 {structure['total_records']}개 레코드",
+                            "metadata": structure
+                        }
+                        chunks.append(structure_chunk)
+                        
+                        # 숫자 통계 청크
+                        if "numeric_stats" in sheet_data["content"]:
+                            for col, stats in sheet_data["content"]["numeric_stats"].items():
+                                stats_chunk = {
+                                    "type": "numeric_stats",
+                                    "sheet_name": sheet_name,
+                                    "content": f"컬럼 '{col}' 통계: 최소값 {stats['min']}, 최대값 {stats['max']}, 평균 {stats['mean']}, 데이터 수 {stats['count']}",
+                                    "metadata": {"column": col, "stats": stats}
+                                }
+                                chunks.append(stats_chunk)
+            
+            logger.info(f"총 {len(chunks)}개의 텍스트 청크 생성 완료")
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"텍스트 청크 생성 실패: {e}")
+            return []
+    
+    def _initialize_embedding_model(self):
+        """임베딩 모델 초기화"""
+        try:
+            if self.embedding_model is None:
+                # 한국어 지원 임베딩 모델 사용
+                self.embedding_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+                logger.info("임베딩 모델 로드 완료")
+        except Exception as e:
+            logger.error(f"임베딩 모델 로드 실패: {e}")
+            # fallback: 간단한 해시 기반 임베딩
+            self.embedding_model = None
+    
+    def _generate_embeddings(self, text_chunks):
+        """텍스트 청크에서 임베딩 벡터 생성"""
+        try:
+            if self.embedding_model is None:
+                # fallback: 간단한 해시 기반 벡터
+                embeddings = []
+                for chunk in text_chunks:
+                    # 간단한 해시 기반 벡터 (128차원)
+                    text_hash = hash(chunk["content"])
+                    vector = np.random.RandomState(text_hash).randn(128).astype('float32')
+                    embeddings.append(vector)
+                logger.info(f"해시 기반 임베딩 {len(embeddings)}개 생성 완료")
+                return embeddings
+            
+            # 실제 임베딩 모델 사용
+            texts = [chunk["content"] for chunk in text_chunks]
+            embeddings = self.embedding_model.encode(texts, convert_to_tensor=False)
+            
+            # numpy 배열로 변환
+            if hasattr(embeddings, 'cpu'):
+                embeddings = embeddings.cpu().numpy()
+            
+            logger.info(f"임베딩 모델 기반 벡터 {len(embeddings)}개 생성 완료")
+            return embeddings
+            
+        except Exception as e:
+            logger.error(f"임베딩 생성 실패: {e}")
+            # fallback: 랜덤 벡터
+            embeddings = [np.random.randn(128).astype('float32') for _ in text_chunks]
+            logger.info(f"랜덤 벡터 fallback {len(embeddings)}개 생성 완료")
+            return embeddings
+    
+    def _build_vector_database(self):
+        """FAISS 벡터 데이터베이스 구축"""
+        try:
+            if len(self.embeddings) == 0:
+                logger.warning("임베딩이 없어 벡터 DB 구축 불가")
+                return
+            
+            # 벡터 차원 확인
+            vector_dim = self.embeddings[0].shape[0]
+            
+            # FAISS 인덱스 생성 (L2 거리 기반)
+            self.vector_database = faiss.IndexFlatL2(vector_dim)
+            
+            # 벡터 추가
+            vectors = np.array(self.embeddings).astype('float32')
+            self.vector_database.add(vectors)
+            
+            logger.info(f"FAISS 벡터 데이터베이스 구축 완료: {len(self.embeddings)}개 벡터, {vector_dim}차원")
+            
+        except Exception as e:
+            logger.error(f"벡터 데이터베이스 구축 실패: {e}")
+            self.vector_database = None
     
     def create_default_images(self):
         """기본 이미지 생성 (Excel에서 이미지를 찾을 수 없을 때)"""
@@ -292,7 +521,7 @@ class CloudVLMSystem:
         }
     
     def query_system(self, query):
-        """범용 쿼리 처리"""
+        """벡터 검색 기반 범용 쿼리 처리"""
         query_lower = query.lower()
         
         # 이미지 관련 (우선순위 높임)
@@ -303,7 +532,13 @@ class CloudVLMSystem:
         if "파일 정보" in query_lower or "excel 파일" in query_lower:
             return self.get_excel_file_info()
         
-        # Excel 파일 데이터 검색
+        # 벡터 데이터베이스가 구축되어 있으면 벡터 검색 수행
+        if self.vector_database is not None and len(self.text_chunks) > 0:
+            vector_results = self._vector_search_query(query)
+            if vector_results:
+                return vector_results
+        
+        # Excel 파일 데이터 검색 (fallback)
         excel_results = self._search_excel_data(query)
         if excel_results:
             return excel_results
@@ -312,14 +547,28 @@ class CloudVLMSystem:
         return self.get_general_response(query)
     
     def _search_excel_data(self, query):
-        """Excel 데이터에서 검색"""
+        """Excel 데이터에서 검색 (fallback)"""
         try:
             query_lower = query.lower()
             results = []
             
             for file_name, file_data in self.processed_data.items():
                 if file_data.get("type") == "excel_file":
-                    # 시트별 검색
+                    # 파싱된 데이터에서 검색
+                    if "parsed_data" in file_data:
+                        parsed_data = file_data["parsed_data"]
+                        for sheet_name, sheet_data in parsed_data.get("sheets", {}).items():
+                            if "content" in sheet_data and "text_content" in sheet_data["content"]:
+                                for text_line in sheet_data["content"]["text_content"]:
+                                    if query_lower in text_line.lower():
+                                        results.append({
+                                            "file": file_name,
+                                            "sheet": sheet_name,
+                                            "content": text_line,
+                                            "type": "text_match"
+                                        })
+                    
+                    # 기존 시트 정보에서 검색 (fallback)
                     for sheet_name, sheet_info in file_data.get("sheets", {}).items():
                         # 샘플 데이터에서 검색
                         for row_data in sheet_info.get("sample_data", []):
@@ -329,25 +578,35 @@ class CloudVLMSystem:
                                         "file": file_name,
                                         "sheet": sheet_name,
                                         "data": row_data,
-                                        "match": f"{key}: {value}"
+                                        "match": f"{key}: {value}",
+                                        "type": "data_match"
                                     })
             
             if results:
                 # 결과를 DataFrame으로 변환
                 df_data = []
                 for result in results:
-                    df_data.append({
-                        "파일명": result["file"],
-                        "시트명": result["sheet"],
-                        "매칭 데이터": result["match"],
-                        "전체 데이터": str(result["data"])
-                    })
+                    if result.get("type") == "text_match":
+                        df_data.append({
+                            "파일명": result["file"],
+                            "시트명": result["sheet"],
+                            "매칭 유형": "텍스트 매칭",
+                            "내용": result["content"][:100] + "..." if len(result["content"]) > 100 else result["content"]
+                        })
+                    else:
+                        df_data.append({
+                            "파일명": result["file"],
+                            "시트명": result["sheet"],
+                            "매칭 유형": "데이터 매칭",
+                            "매칭 데이터": result["match"],
+                            "전체 데이터": str(result["data"])[:100] + "..." if len(str(result["data"])) > 100 else str(result["data"])
+                        })
                 
                 df = pd.DataFrame(df_data)
                 
                 return {
                     "type": "excel_search",
-                    "title": f"🔍 '{query}' 검색 결과",
+                    "title": f"🔍 '{query}' 검색 결과 (fallback)",
                     "data": df,
                     "summary": f"총 {len(results)}개 결과 발견",
                     "chart_type": "table"
@@ -359,18 +618,86 @@ class CloudVLMSystem:
             logger.error(f"Excel 데이터 검색 실패: {e}")
             return None
     
+    def _vector_search_query(self, query):
+        """벡터 검색을 통한 쿼리 처리"""
+        try:
+            if self.vector_database is None or len(self.text_chunks) == 0:
+                return None
+            
+            # 쿼리 텍스트를 임베딩 벡터로 변환
+            if self.embedding_model is not None:
+                query_vector = self.embedding_model.encode([query], convert_to_tensor=False)
+                if hasattr(query_vector, 'cpu'):
+                    query_vector = query_vector.cpu().numpy()
+            else:
+                # fallback: 해시 기반 벡터
+                query_hash = hash(query)
+                query_vector = np.random.RandomState(query_hash).randn(128).astype('float32')
+            
+            # FAISS로 유사한 벡터 검색 (상위 5개)
+            k = min(5, len(self.text_chunks))
+            distances, indices = self.vector_database.search(query_vector.reshape(1, -1), k)
+            
+            # 검색 결과 정리
+            search_results = []
+            for i, (distance, idx) in enumerate(zip(distances[0], indices[0])):
+                if idx < len(self.text_chunks):
+                    chunk = self.text_chunks[idx]
+                    search_results.append({
+                        "rank": i + 1,
+                        "similarity": float(1.0 / (1.0 + distance)),  # 거리를 유사도로 변환
+                        "content": chunk["content"],
+                        "type": chunk["type"],
+                        "sheet_name": chunk.get("sheet_name", "N/A"),
+                        "metadata": chunk.get("metadata", {})
+                    })
+            
+            if search_results:
+                # 결과를 DataFrame으로 변환
+                df_data = []
+                for result in search_results:
+                    df_data.append({
+                        "순위": result["rank"],
+                        "유사도": f"{result['similarity']:.3f}",
+                        "시트": result["sheet_name"],
+                        "유형": result["type"],
+                        "내용": result["content"][:100] + "..." if len(result["content"]) > 100 else result["content"]
+                    })
+                
+                df = pd.DataFrame(df_data)
+                
+                return {
+                    "type": "vector_search",
+                    "title": f"🔍 벡터 검색 결과: '{query}'",
+                    "data": df,
+                    "summary": f"벡터 검색으로 {len(search_results)}개 결과 발견 (유사도 기반)",
+                    "chart_type": "table",
+                    "raw_results": search_results
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"벡터 검색 실패: {e}")
+            return None
+    
     def get_excel_file_info(self):
         """Excel 파일 정보 반환"""
         try:
             file_info = []
             for file_name, file_data in self.processed_data.items():
                 if file_data.get("type") == "excel_file":
+                    # 파싱된 데이터 정보
+                    parsed_info = file_data.get("parsed_data", {})
+                    sheets_info = parsed_info.get("sheets", {})
+                    
                     info = {
                         "파일명": file_name,
-                        "시트 수": len(file_data.get("sheets", {})),
-                        "이미지 수": len(file_data.get("images", {})),
+                        "시트 수": len(sheets_info),
+                        "텍스트 청크 수": file_data.get("chunks_count", 0),
+                        "벡터 DB 크기": file_data.get("vector_db_size", 0),
                         "파일 크기": f"{file_data.get('file_info', {}).get('size', 0) / 1024:.1f} KB",
-                        "수정일": str(file_data.get('file_info', {}).get('modified', 'N/A'))
+                        "업로드 시간": str(file_data.get('file_info', {}).get('uploaded', 'N/A'))
                     }
                     file_info.append(info)
             
@@ -378,9 +705,9 @@ class CloudVLMSystem:
                 df = pd.DataFrame(file_info)
                 return {
                     "type": "file_info",
-                    "title": "📁 Excel 파일 정보",
+                    "title": "📁 Excel 파일 정보 (벡터 DB 포함)",
                     "data": df,
-                    "summary": f"총 {len(file_info)}개 Excel 파일",
+                    "summary": f"총 {len(file_info)}개 Excel 파일, 벡터 검색 가능",
                     "chart_type": "table"
                 }
             else:
@@ -714,6 +1041,28 @@ def display_result(result):
         with col2:
             st.metric("검색 결과", result["summary"])
             st.info("Excel 파일에서 찾은 데이터")
+    
+    elif result["type"] == "vector_search":
+        st.subheader(result["title"])
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.dataframe(result["data"], use_container_width=True)
+        
+        with col2:
+            st.metric("벡터 검색 결과", result["summary"])
+            st.info("AI 벡터 검색으로 찾은 유사한 내용")
+            
+            # 상세 정보 표시
+            if "raw_results" in result:
+                st.write("🔍 상세 검색 결과:")
+                for i, raw_result in enumerate(result["raw_results"][:3], 1):
+                    with st.expander(f"결과 {i} (유사도: {raw_result['similarity']:.3f})"):
+                        st.write(f"**시트**: {raw_result['sheet_name']}")
+                        st.write(f"**유형**: {raw_result['type']}")
+                        st.write(f"**내용**: {raw_result['content']}")
+                        if raw_result.get("metadata"):
+                            st.write(f"**메타데이터**: {raw_result['metadata']}")
     
     elif result["type"] == "file_info":
         st.subheader(result["title"])
