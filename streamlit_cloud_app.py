@@ -12,6 +12,8 @@ import logging
 import numpy as np
 import hashlib
 import random
+import openai
+import requests
 
 # 페이지 설정
 st.set_page_config(
@@ -24,6 +26,187 @@ st.set_page_config(
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# LLM API 설정
+GPT_OSS_API_KEY = "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"
+GPT_OSS_BASE_URL = "https://api.openai.com/v1"  # 실제 API 엔드포인트로 변경 필요
+
+# 환경 변수에서 API 키 가져오기 (보안을 위해)
+import os
+if os.getenv("OPENAI_API_KEY"):
+    GPT_OSS_API_KEY = os.getenv("OPENAI_API_KEY")
+
+class LLMIntegration:
+    """LLM 모델 연동 클래스"""
+    
+    def __init__(self):
+        self.gpt_oss_client = None
+        self.qwen3_client = None
+        self.initialize_llm_clients()
+    
+    def initialize_llm_clients(self):
+        """LLM 클라이언트 초기화"""
+        try:
+            # API 키 유효성 검사
+            if not GPT_OSS_API_KEY or GPT_OSS_API_KEY.startswith("sk-or-v1-"):
+                logger.warning("⚠️ 유효하지 않은 API 키 형식. 시뮬레이션 모드로 전환합니다.")
+                self.gpt_oss_client = None
+                return
+            
+            # GPT OSS 120B 클라이언트 초기화
+            self.gpt_oss_client = openai.OpenAI(
+                api_key=GPT_OSS_API_KEY,
+                base_url=GPT_OSS_BASE_URL
+            )
+            
+            # 간단한 API 테스트
+            try:
+                response = self.gpt_oss_client.models.list()
+                logger.info("✅ GPT OSS 120B 클라이언트 초기화 및 연결 테스트 완료")
+            except Exception as test_error:
+                logger.warning(f"⚠️ API 연결 테스트 실패: {test_error}")
+                self.gpt_oss_client = None
+                
+        except Exception as e:
+            logger.error(f"❌ GPT OSS 클라이언트 초기화 실패: {e}")
+            self.gpt_oss_client = None
+    
+    def analyze_image_with_gpt_oss(self, image, prompt):
+        """GPT OSS 120B를 사용하여 이미지 분석"""
+        try:
+            if not self.gpt_oss_client:
+                return {"error": "GPT OSS 클라이언트가 초기화되지 않았습니다."}
+            
+            # 이미지를 base64로 인코딩
+            img_buffer = io.BytesIO()
+            image.save(img_buffer, format='PNG')
+            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+            
+            # GPT OSS Vision API 호출
+            response = self.gpt_oss_client.chat.completions.create(
+                model="gpt-4o",  # 실제 모델명으로 변경 필요
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{img_base64}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=1000,
+                temperature=0.3
+            )
+            
+            return {
+                "success": True,
+                "analysis": response.choices[0].message.content,
+                "model": "GPT OSS 120B"
+            }
+            
+        except Exception as e:
+            logger.error(f"GPT OSS 이미지 분석 실패: {e}")
+            return {"error": str(e)}
+    
+    def generate_text_with_gpt_oss(self, prompt, context=""):
+        """GPT OSS 120B를 사용하여 텍스트 생성"""
+        try:
+            if not self.gpt_oss_client:
+                return {"error": "GPT OSS 클라이언트가 초기화되지 않았습니다."}
+            
+            full_prompt = f"{context}\n\n{prompt}" if context else prompt
+            
+            response = self.gpt_oss_client.chat.completions.create(
+                model="gpt-4o",  # 실제 모델명으로 변경 필요
+                messages=[
+                    {"role": "user", "content": full_prompt}
+                ],
+                max_tokens=1000,
+                temperature=0.3
+            )
+            
+            return {
+                "success": True,
+                "text": response.choices[0].message.content,
+                "model": "GPT OSS 120B"
+            }
+            
+        except Exception as e:
+            logger.error(f"GPT OSS 텍스트 생성 실패: {e}")
+            return {"error": str(e)}
+    
+    def analyze_image_with_qwen3(self, image, prompt):
+        """Qwen3 오픈소스 모델을 사용하여 이미지 분석"""
+        try:
+            # Qwen3 API 호출 (실제 엔드포인트로 변경 필요)
+            qwen3_url = "https://api.qwen.ai/v1/chat/completions"
+            
+            # 이미지를 base64로 인코딩
+            img_buffer = io.BytesIO()
+            image.save(img_buffer, format='PNG')
+            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+            
+            headers = {
+                "Authorization": f"Bearer {GPT_OSS_API_KEY}",  # API 키 재사용
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "model": "qwen-vl-plus",  # 실제 모델명으로 변경 필요
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{img_base64}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "max_tokens": 1000,
+                "temperature": 0.3
+            }
+            
+            response = requests.post(qwen3_url, headers=headers, json=data)
+            
+            if response.status_code == 200:
+                result = response.json()
+                return {
+                    "success": True,
+                    "analysis": result["choices"][0]["message"]["content"],
+                    "model": "Qwen3"
+                }
+            else:
+                return {"error": f"Qwen3 API 오류: {response.status_code}"}
+                
+        except Exception as e:
+            logger.error(f"Qwen3 이미지 분석 실패: {e}")
+            return {"error": str(e)}
+    
+    def get_available_models(self):
+        """사용 가능한 LLM 모델 목록 반환"""
+        models = []
+        
+        if self.gpt_oss_client:
+            models.append("GPT OSS 120B")
+        
+        # Qwen3는 항상 사용 가능 (API 호출 시도)
+        models.append("Qwen3")
+        
+        # 실제 사용 가능한 모델이 없으면 시뮬레이션만 표시
+        if not models:
+            models.append("시뮬레이션")
+        
+        return models
 
 class CloudVLMSystem:
     def __init__(self):
@@ -40,6 +223,9 @@ class CloudVLMSystem:
         
         # VLM 이미지 분석 관련
         self.image_analysis = {}
+        
+        # LLM 연동 관련
+        self.llm_integration = LLMIntegration()
         
         self.initialize_system()
     
@@ -956,9 +1142,13 @@ class CloudVLMSystem:
                 "format": getattr(img, 'format', 'Unknown')
             }
             
-            # 이미지 내용 분석 (VLM 시뮬레이션)
-            # 실제 VLM 모델이 있다면 여기서 호출
-            analysis_result = self._simulate_vlm_analysis(img_name, img_info)
+            # 실제 LLM을 사용한 이미지 분석 시도
+            analysis_result = self._analyze_with_real_llm(img_name, img, img_info)
+            
+            # LLM 분석이 실패하면 시뮬레이션 사용
+            if not analysis_result or "error" in analysis_result:
+                logger.warning(f"LLM 분석 실패, 시뮬레이션 사용: {img_name}")
+                analysis_result = self._simulate_vlm_analysis(img_name, img_info)
             
             return analysis_result
             
@@ -1049,6 +1239,116 @@ class CloudVLMSystem:
                 "tags": ["오류", "분석실패"],
                 "confidence": 0.0
             }
+    
+    def _analyze_with_real_llm(self, img_name, img, img_info):
+        """실제 LLM을 사용하여 이미지 분석"""
+        try:
+            # 이미지 분석을 위한 프롬프트 생성
+            prompt = f"""
+            이 이미지({img_name})를 분석해주세요. 
+            
+            다음 정보를 포함하여 분석해주세요:
+            1. 이미지가 보여주는 내용 (조립 공정, 품질 검사, 제품 등)
+            2. 이미지의 목적과 용도
+            3. 작업자가 알아야 할 핵심 정보
+            4. 관련된 키워드나 태그
+            
+            한국어로 상세하게 설명해주세요.
+            """
+            
+            # GPT OSS 120B로 이미지 분석 시도
+            gpt_result = self.llm_integration.analyze_image_with_gpt_oss(img, prompt)
+            
+            if gpt_result.get("success"):
+                # GPT OSS 분석 결과 파싱
+                analysis = self._parse_llm_analysis_result(gpt_result["analysis"], img_name, img_info)
+                analysis["llm_model"] = "GPT OSS 120B"
+                analysis["analysis_method"] = "Real_LLM"
+                return analysis
+            
+            # GPT OSS 실패 시 Qwen3 시도
+            qwen_result = self.llm_integration.analyze_image_with_qwen3(img, prompt)
+            
+            if qwen_result.get("success"):
+                # Qwen3 분석 결과 파싱
+                analysis = self._parse_llm_analysis_result(qwen_result["analysis"], img_name, img_info)
+                analysis["llm_model"] = "Qwen3"
+                analysis["analysis_method"] = "Real_LLM"
+                return analysis
+            
+            # 모든 LLM 분석 실패
+            logger.warning(f"모든 LLM 분석 실패: {img_name}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"실제 LLM 이미지 분석 실패 {img_name}: {e}")
+            return None
+    
+    def _parse_llm_analysis_result(self, llm_text, img_name, img_info):
+        """LLM 분석 결과를 구조화된 형태로 파싱"""
+        try:
+            # 이미지 번호 추출
+            img_num = None
+            if "image" in img_name.lower():
+                try:
+                    img_num = int(''.join(filter(str.isdigit, img_name)))
+                except:
+                    pass
+            
+            # LLM 텍스트에서 키워드 추출
+            text_lower = llm_text.lower()
+            
+            # 이미지 유형 분류
+            if any(word in text_lower for word in ["조립", "공정", "작업", "단계", "과정"]):
+                img_type = "assembly_process"
+                confidence = 0.90
+            elif any(word in text_lower for word in ["검사", "품질", "테스트", "확인"]):
+                img_type = "quality_inspection"
+                confidence = 0.90
+            elif any(word in text_lower for word in ["제품", "완성", "안착", "최종"]):
+                img_type = "product_final"
+                confidence = 0.90
+            else:
+                img_type = "general_image"
+                confidence = 0.75
+            
+            # 태그 생성
+            tags = []
+            if img_num:
+                tags.append(f"image{img_num}")
+            
+            # LLM 텍스트에서 키워드 추출하여 태그 추가
+            keywords = ["조립", "공정", "작업", "검사", "품질", "테스트", "제품", "완성", "부품", "도면"]
+            for keyword in keywords:
+                if keyword in text_lower:
+                    tags.append(keyword)
+            
+            # 상세 분석을 문장 단위로 분리
+            details = []
+            sentences = llm_text.split('.')
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if sentence and len(sentence) > 10:
+                    details.append(sentence)
+            
+            # 최대 5개 상세 설명으로 제한
+            details = details[:5]
+            
+            analysis = {
+                "type": img_type,
+                "summary": f"LLM 분석: {img_name}",
+                "details": details,
+                "tags": tags,
+                "confidence": confidence,
+                "metadata": img_info,
+                "llm_raw_text": llm_text
+            }
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"LLM 분석 결과 파싱 실패: {e}")
+            return None
     
     def generate_auto_questions(self, excel_file_path):
         """Excel 파일 내용을 분석하여 자동으로 질문 생성"""
@@ -1164,6 +1464,51 @@ def main():
     with st.sidebar:
         st.header("🔧 시스템 설정")
         
+        # LLM 모델 선택
+        st.subheader("🤖 LLM 모델 선택")
+        available_models = st.session_state.system.llm_integration.get_available_models()
+        
+        if "selected_llm_model" not in st.session_state:
+            st.session_state.selected_llm_model = available_models[0] if available_models else "시뮬레이션"
+        
+        # 모델 옵션 구성
+        model_options = []
+        if "GPT OSS 120B" in available_models:
+            model_options.append("GPT OSS 120B")
+        if "Qwen3" in available_models:
+            model_options.append("Qwen3")
+        model_options.append("시뮬레이션")
+        
+        selected_model = st.selectbox(
+            "분석에 사용할 LLM 모델",
+            options=model_options,
+            index=model_options.index(st.session_state.selected_llm_model) if st.session_state.selected_llm_model in model_options else len(model_options) - 1,
+            help="이미지 분석에 사용할 LLM 모델을 선택하세요"
+        )
+        
+        if selected_model != st.session_state.selected_llm_model:
+            st.session_state.selected_llm_model = selected_model
+            st.rerun()
+        
+        # LLM 상태 표시
+        if selected_model == "GPT OSS 120B":
+            if st.session_state.system.llm_integration.gpt_oss_client:
+                st.success("✅ GPT OSS 120B 모델 활성화 (API 연결됨)")
+            else:
+                st.error("❌ GPT OSS 120B 모델 비활성화 (API 연결 실패)")
+        elif selected_model == "Qwen3":
+            st.warning("⚠️ Qwen3 모델 (API 연결 테스트 필요)")
+        else:
+            st.info("ℹ️ 시뮬레이션 모드 (실제 LLM 사용 안함)")
+        
+        # API 키 상태 표시
+        if GPT_OSS_API_KEY.startswith("sk-or-v1-"):
+            st.warning("⚠️ API 키 형식이 올바르지 않습니다. OpenAI API 키를 설정해주세요.")
+        elif GPT_OSS_API_KEY:
+            st.success("✅ API 키 설정됨")
+        else:
+            st.error("❌ API 키가 설정되지 않았습니다.")
+        
         if st.button("🔄 시스템 재초기화", type="primary"):
             st.session_state.system = CloudVLMSystem()
             st.rerun()
@@ -1259,9 +1604,22 @@ def main():
                         st.write(f"📝 **요약**: {analysis['summary']}")
                         st.write(f"🏷️ **태그**: {', '.join(analysis['tags'])}")
                         st.write(f"📊 **신뢰도**: {analysis['confidence']:.2f}")
+                        
+                        # LLM 모델 정보 표시
+                        if "llm_model" in analysis:
+                            st.write(f"🤖 **LLM 모델**: {analysis['llm_model']}")
+                            st.write(f"🔧 **분석 방법**: {analysis['analysis_method']}")
+                        
                         with st.expander("📋 상세 분석"):
                             for detail in analysis['details']:
                                 st.write(f"• {detail}")
+                            
+                            # LLM 원본 텍스트 표시
+                            if "llm_raw_text" in analysis:
+                                st.write("---")
+                                st.write("**🤖 LLM 원본 분석:**")
+                                st.write(analysis['llm_raw_text'])
+                        
                         st.divider()
                     else:
                         st.error(f"❌ {img_name}: {analysis['error']}")
@@ -1355,9 +1713,20 @@ def display_result(result):
             st.write(f"**🔖 태그**: {', '.join(vlm['tags'])}")
             st.write(f"**📊 신뢰도**: {vlm['confidence']:.2f}")
             
+            # LLM 모델 정보 표시
+            if "llm_model" in vlm:
+                st.write(f"**🤖 LLM 모델**: {vlm['llm_model']}")
+                st.write(f"**🔧 분석 방법**: {vlm['analysis_method']}")
+            
             with st.expander("📋 상세 분석"):
                 for detail in vlm['details']:
                     st.write(f"• {detail}")
+                
+                # LLM 원본 텍스트 표시
+                if "llm_raw_text" in vlm:
+                    st.write("---")
+                    st.write("**🤖 LLM 원본 분석:**")
+                    st.write(vlm['llm_raw_text'])
         
         # 다른 매칭된 이미지들도 표시
         if "all_images" in result and len(result["all_images"]) > 1:
