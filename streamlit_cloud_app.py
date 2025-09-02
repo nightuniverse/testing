@@ -316,7 +316,7 @@ class CloudVLMSystem:
             self.embedding_model = None
     
     def _generate_embeddings(self, text_chunks):
-        """경량화된 해시 기반 임베딩 벡터 생성"""
+        """완전히 결정적인 해시 기반 임베딩 벡터 생성"""
         try:
             embeddings = []
             for chunk in text_chunks:
@@ -324,25 +324,43 @@ class CloudVLMSystem:
                 text_content = chunk["content"]
                 text_hash = hashlib.md5(text_content.encode('utf-8')).hexdigest()
                 
-                # 해시를 기반으로 일관된 벡터 생성
-                random.seed(int(text_hash[:8], 16))
-                vector = np.random.randn(64).astype('float32')
+                # 완전히 결정적인 벡터 생성 (random.seed 사용하지 않음)
+                vector = self._hash_to_vector(text_hash, 64)
                 
                 # 정규화
                 vector = vector / np.linalg.norm(vector)
                 embeddings.append(vector)
             
-            logger.info(f"경량화된 해시 기반 임베딩 {len(embeddings)}개 생성 완료")
+            logger.info(f"완전히 결정적인 해시 기반 임베딩 {len(embeddings)}개 생성 완료")
             return embeddings
             
         except Exception as e:
             logger.error(f"임베딩 생성 실패: {e}")
-            # fallback: 랜덤 벡터
-            embeddings = [np.random.randn(64).astype('float32') for _ in text_chunks]
-            for i, emb in enumerate(embeddings):
-                embeddings[i] = emb / np.linalg.norm(emb)
-            logger.info(f"랜덤 벡터 fallback {len(embeddings)}개 생성 완료")
+            # fallback: 결정적인 벡터
+            embeddings = []
+            for i, chunk in enumerate(text_chunks):
+                text_hash = hashlib.md5(f"fallback_{i}".encode('utf-8')).hexdigest()
+                vector = self._hash_to_vector(text_hash, 64)
+                vector = vector / np.linalg.norm(vector)
+                embeddings.append(vector)
+            logger.info(f"결정적인 fallback 벡터 {len(embeddings)}개 생성 완료")
             return embeddings
+    
+    def _hash_to_vector(self, text_hash, dimensions):
+        """해시를 결정적인 벡터로 변환"""
+        vector = np.zeros(dimensions, dtype='float32')
+        
+        # 해시의 각 문자를 숫자로 변환하여 벡터 생성
+        for i in range(dimensions):
+            # 해시에서 순환하면서 값을 추출
+            hash_idx = i % len(text_hash)
+            char_val = ord(text_hash[hash_idx])
+            
+            # 문자 값을 -1에서 1 사이로 정규화
+            normalized_val = (char_val - 48) / 122.0  # 48(0) ~ 122(z) 범위를 -1~1로
+            vector[i] = normalized_val
+        
+        return vector
     
     def _build_vector_database(self):
         """경량화된 Python 기반 벡터 데이터베이스 구축"""
@@ -613,15 +631,14 @@ class CloudVLMSystem:
             return None
     
     def _vector_search_query(self, query):
-        """경량화된 벡터 검색을 통한 쿼리 처리"""
+        """완전히 결정적인 벡터 검색을 통한 쿼리 처리"""
         try:
             if self.vector_database is None or len(self.text_chunks) == 0:
                 return None
             
-            # 쿼리 텍스트를 임베딩 벡터로 변환
+            # 쿼리 텍스트를 임베딩 벡터로 변환 (결정적)
             query_hash = hashlib.md5(query.encode('utf-8')).hexdigest()
-            random.seed(int(query_hash[:8], 16))
-            query_vector = np.random.randn(64).astype('float32')
+            query_vector = self._hash_to_vector(query_hash, 64)
             query_vector = query_vector / np.linalg.norm(query_vector)
             
             # 순수 Python으로 유사도 계산 (코사인 유사도)
@@ -938,7 +955,7 @@ def display_result(result):
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.dataframe(result["data"], use_container_width=True)
+            st.dataframe(result["data"], width='stretch')
         
         with col2:
             st.metric("총 공정 수", result["summary"])
@@ -949,7 +966,7 @@ def display_result(result):
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.dataframe(result["data"], use_container_width=True)
+            st.dataframe(result["data"], width='stretch')
         
         with col2:
             st.metric("모델명", result["summary"])
@@ -960,7 +977,7 @@ def display_result(result):
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.dataframe(result["data"], use_container_width=True)
+            st.dataframe(result["data"], width='stretch')
         
         with col2:
             st.metric("시스템", result["summary"])
@@ -971,7 +988,7 @@ def display_result(result):
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.dataframe(result["data"], use_container_width=True)
+            st.dataframe(result["data"], width='stretch')
         
         with col2:
             st.metric("품질 관리", result["summary"])
@@ -1035,7 +1052,7 @@ def display_result(result):
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.dataframe(result["data"], use_container_width=True)
+            st.dataframe(result["data"], width='stretch')
         
         with col2:
             st.metric("검색 결과", result["summary"])
@@ -1046,7 +1063,7 @@ def display_result(result):
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.dataframe(result["data"], use_container_width=True)
+            st.dataframe(result["data"], width='stretch')
         
         with col2:
             st.metric("벡터 검색 결과", result["summary"])
@@ -1068,7 +1085,7 @@ def display_result(result):
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.dataframe(result["data"], use_container_width=True)
+            st.dataframe(result["data"], width='stretch')
         
         with col2:
             st.metric("파일 수", result["summary"])
