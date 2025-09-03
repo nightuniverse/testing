@@ -14,38 +14,38 @@ import hashlib
 import random
 import requests
 
-# OpenAI 패키지 import 시도 (Streamlit Cloud 호환성)
+# OpenAI package import attempt (Streamlit Cloud compatibility)
 try:
     import openai
     OPENAI_AVAILABLE = True
 except ImportError:
     openai = None
     OPENAI_AVAILABLE = False
-    st.warning("⚠️ OpenAI 패키지를 불러올 수 없습니다. 시뮬레이션 모드로 실행됩니다.")
+    st.warning("⚠️ Cannot load OpenAI package. Running in simulation mode.")
 
-# 페이지 설정
+# Page configuration
 st.set_page_config(
-    page_title="Test Excels VLM System - Cloud",
-    page_icon="📊",
+    page_title="Manufacturing Excel VLM System - Cloud",
+    page_icon="🏭",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# 로깅 설정
+# Logging configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# LLM API 설정
+# LLM API configuration
 GPT_OSS_API_KEY = "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"
-GPT_OSS_BASE_URL = "https://api.openai.com/v1"  # 실제 API 엔드포인트로 변경 필요
+GPT_OSS_BASE_URL = "https://api.openai.com/v1"  # Change to actual API endpoint
 
-# 환경 변수에서 API 키 가져오기 (보안을 위해)
+# Get API key from environment variables (for security)
 import os
 if os.getenv("OPENAI_API_KEY"):
     GPT_OSS_API_KEY = os.getenv("OPENAI_API_KEY")
 
 class LLMIntegration:
-    """LLM 모델 연동 클래스"""
+    """LLM Model Integration Class"""
     
     def __init__(self):
         self.gpt_oss_client = None
@@ -53,36 +53,36 @@ class LLMIntegration:
         self.initialize_llm_clients()
     
     def initialize_llm_clients(self):
-        """LLM 클라이언트 초기화"""
+        """Initialize LLM clients"""
         try:
-            # OpenAI 패키지 사용 가능 여부 확인
+            # Check OpenAI package availability
             if not OPENAI_AVAILABLE:
-                logger.warning("⚠️ OpenAI 패키지를 사용할 수 없습니다. 시뮬레이션 모드로 전환합니다.")
+                logger.warning("⚠️ Cannot use OpenAI package. Switching to simulation mode.")
                 self.gpt_oss_client = None
                 return
             
-            # API 키 유효성 검사
+            # API key validation
             if not GPT_OSS_API_KEY or GPT_OSS_API_KEY.startswith("sk-or-v1-"):
-                logger.warning("⚠️ 유효하지 않은 API 키 형식. 시뮬레이션 모드로 전환합니다.")
+                logger.warning("⚠️ Invalid API key format. Switching to simulation mode.")
                 self.gpt_oss_client = None
                 return
             
-            # GPT OSS 120B 클라이언트 초기화
+            # Initialize GPT OSS 120B client
             self.gpt_oss_client = openai.OpenAI(
                 api_key=GPT_OSS_API_KEY,
                 base_url=GPT_OSS_BASE_URL
             )
             
-            # 간단한 API 테스트
+            # Simple API test
             try:
                 response = self.gpt_oss_client.models.list()
-                logger.info("✅ GPT OSS 120B 클라이언트 초기화 및 연결 테스트 완료")
+                logger.info("✅ GPT OSS 120B client initialization and connection test completed")
             except Exception as test_error:
-                logger.warning(f"⚠️ API 연결 테스트 실패: {test_error}")
+                logger.warning(f"⚠️ API connection test failed: {test_error}")
                 self.gpt_oss_client = None
                 
         except Exception as e:
-            logger.error(f"❌ GPT OSS 클라이언트 초기화 실패: {e}")
+            logger.error(f"❌ GPT OSS client initialization failed: {e}")
             self.gpt_oss_client = None
     
     def analyze_image_with_gpt_oss(self, image, prompt):
@@ -98,7 +98,7 @@ class LLMIntegration:
             
             # GPT OSS Vision API 호출
             response = self.gpt_oss_client.chat.completions.create(
-                model="gpt-4o",  # 실제 모델명으로 변경 필요
+                model="gpt-4o",  # Change to actual model name
                 messages=[
                     {
                         "role": "user",
@@ -124,19 +124,19 @@ class LLMIntegration:
             }
             
         except Exception as e:
-            logger.error(f"GPT OSS 이미지 분석 실패: {e}")
+            logger.error(f"GPT OSS image analysis failed: {e}")
             return {"error": str(e)}
     
     def generate_text_with_gpt_oss(self, prompt, context=""):
-        """GPT OSS 120B를 사용하여 텍스트 생성"""
+        """Generate text using GPT OSS 120B"""
         try:
             if not self.gpt_oss_client:
-                return {"error": "GPT OSS 클라이언트가 초기화되지 않았습니다."}
+                return {"error": "GPT OSS client not initialized."}
             
             full_prompt = f"{context}\n\n{prompt}" if context else prompt
             
             response = self.gpt_oss_client.chat.completions.create(
-                model="gpt-4o",  # 실제 모델명으로 변경 필요
+                model="gpt-4o",  # Change to actual model name
                 messages=[
                     {"role": "user", "content": full_prompt}
                 ],
@@ -151,27 +151,27 @@ class LLMIntegration:
             }
             
         except Exception as e:
-            logger.error(f"GPT OSS 텍스트 생성 실패: {e}")
+            logger.error(f"GPT OSS text generation failed: {e}")
             return {"error": str(e)}
     
     def analyze_image_with_qwen3(self, image, prompt):
-        """Qwen3 오픈소스 모델을 사용하여 이미지 분석"""
+        """Analyze image using Qwen3 open source model"""
         try:
-            # Qwen3 API 호출 (실제 엔드포인트로 변경 필요)
+            # Qwen3 API call (change to actual endpoint)
             qwen3_url = "https://api.qwen.ai/v1/chat/completions"
             
-            # 이미지를 base64로 인코딩
+            # Encode image to base64
             img_buffer = io.BytesIO()
             image.save(img_buffer, format='PNG')
             img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
             
             headers = {
-                "Authorization": f"Bearer {GPT_OSS_API_KEY}",  # API 키 재사용
+                "Authorization": f"Bearer {GPT_OSS_API_KEY}",  # Reuse API key
                 "Content-Type": "application/json"
             }
             
             data = {
-                "model": "qwen-vl-plus",  # 실제 모델명으로 변경 필요
+                "model": "qwen-vl-plus",  # Change to actual model name
                 "messages": [
                     {
                         "role": "user",
@@ -200,26 +200,26 @@ class LLMIntegration:
                     "model": "Qwen3"
                 }
             else:
-                return {"error": f"Qwen3 API 오류: {response.status_code}"}
+                return {"error": f"Qwen3 API error: {response.status_code}"}
                 
         except Exception as e:
-            logger.error(f"Qwen3 이미지 분석 실패: {e}")
+            logger.error(f"Qwen3 image analysis failed: {e}")
             return {"error": str(e)}
     
     def get_available_models(self):
-        """사용 가능한 LLM 모델 목록 반환"""
+        """Return list of available LLM models"""
         models = []
         
-        # OpenAI 패키지 사용 가능 여부 확인
+        # Check OpenAI package availability
         if OPENAI_AVAILABLE and self.gpt_oss_client:
             models.append("GPT OSS 120B")
         
-        # Qwen3는 항상 사용 가능 (API 호출 시도)
+        # Qwen3 is always available (API call attempt)
         models.append("Qwen3")
         
-        # 실제 사용 가능한 모델이 없으면 시뮬레이션만 표시
+        # If no actual models available, show simulation only
         if not models:
-            models.append("시뮬레이션")
+            models.append("Simulation")
         
         return models
 
@@ -233,119 +233,119 @@ class CloudVLMSystem:
         self.embeddings = []
         self.embedding_model = None
         
-        # 자동 질문 생성 관련
+        # Auto question generation
         self.auto_questions = []
         
-        # VLM 이미지 분석 관련
+        # VLM image analysis
         self.image_analysis = {}
         
-        # LLM 연동 관련
+        # LLM integration
         self.llm_integration = LLMIntegration()
         
         self.initialize_system()
     
     def initialize_system(self):
-        """시스템 초기화"""
+        """Initialize system"""
         try:
-            # Streamlit Cloud에서는 로컬 파일 접근 불가
-            # 기본 이미지 생성하지 않고 업로드된 파일 처리 대기
-            self.extracted_images = {}  # 빈 이미지 딕셔너리로 초기화
+            # Streamlit Cloud cannot access local files
+            # Don't generate default images, wait for uploaded files
+            self.extracted_images = {}  # Initialize with empty image dictionary
             
-            # 기본 데이터 초기화
+            # Initialize basic data
             self.processed_data = {
-                "시스템 정보": {
+                "System Information": {
                     "type": "system",
-                    "content": "Excel 파일을 업로드하여 데이터를 처리할 수 있습니다.",
-                    "features": ["파일 업로드", "이미지 추출", "데이터 분석"]
+                    "content": "Upload Excel files to process data.",
+                    "features": ["File Upload", "Image Extraction", "Data Analysis"]
                 }
             }
             
             return True
         except Exception as e:
-            st.error(f"❌ 시스템 초기화 중 오류 발생: {str(e)}")
+            st.error(f"❌ Error during system initialization: {str(e)}")
             return False
     
     def extract_images_from_excel(self):
-        """Excel 파일에서 이미지 추출 (더 이상 사용하지 않음)"""
-        # Streamlit Cloud에서는 로컬 파일 접근 불가
-        # 업로드된 파일만 처리 가능
-        logger.info("로컬 Excel 파일 접근 불가 - 업로드된 파일만 처리 가능")
+        """Extract images from Excel file (no longer used)"""
+        # Streamlit Cloud cannot access local files
+        # Only uploaded files can be processed
+        logger.info("Cannot access local Excel files - only uploaded files can be processed")
         self.create_default_images()
     
     def extract_images_from_uploaded_file(self, uploaded_file):
-        """업로드된 Excel 파일에서 이미지 추출"""
+        """Extract images from uploaded Excel file"""
         try:
-            # 업로드된 파일을 임시로 저장
+            # Save uploaded file temporarily
             with open("temp_excel.xlsx", "wb") as f:
                 f.write(uploaded_file.getbuffer())
             
-            # Excel 파일을 ZIP으로 열기
+            # Open Excel file as ZIP
             with zipfile.ZipFile("temp_excel.xlsx", 'r') as zip_file:
-                # 이미지 파일들 찾기
+                # Find image files
                 image_files = [f for f in zip_file.namelist() if f.startswith('xl/media/')]
                 
                 extracted_count = 0
                 for image_file in image_files:
                     try:
-                        # 이미지 파일 읽기
+                        # Read image file
                         with zip_file.open(image_file) as img_file:
                             img_data = img_file.read()
                             img = Image.open(io.BytesIO(img_data))
                             
-                            # 이미지 이름 추출
+                            # Extract image name
                             img_name = os.path.basename(image_file)
                             img_name_without_ext = os.path.splitext(img_name)[0]
                             
-                            # 이미지 저장
+                            # Save image
                             self.extracted_images[img_name_without_ext] = img
                             extracted_count += 1
                             
                     except Exception as e:
-                        logger.error(f"이미지 추출 실패 {image_file}: {e}")
+                        logger.error(f"Image extraction failed {image_file}: {e}")
                 
-                # 임시 파일 삭제
+                # Delete temporary file
                 if os.path.exists("temp_excel.xlsx"):
                     os.remove("temp_excel.xlsx")
                 
                 if extracted_count > 0:
-                    # VLM을 사용하여 이미지 분석
-                    logger.info(f"VLM 이미지 분석 시작: {extracted_count}개 이미지")
+                    # Analyze images using VLM
+                    logger.info(f"VLM image analysis started: {extracted_count} images")
                     self._analyze_images_with_vlm()
                 
                 return extracted_count
                 
         except Exception as e:
-            logger.error(f"업로드된 Excel 이미지 추출 실패: {e}")
+            logger.error(f"Failed to extract images from uploaded Excel: {e}")
             return 0
     
     def process_uploaded_excel_data(self, uploaded_file):
-        """업로드된 Excel 파일을 docling 스타일로 파싱하고 벡터 데이터베이스 구축"""
+        """Parse uploaded Excel file in docling style and build vector database"""
         try:
-            # 업로드된 파일을 임시로 저장
+            # Save uploaded file temporarily
             with open("temp_excel.xlsx", "wb") as f:
                 f.write(uploaded_file.getbuffer())
             
-            # 1단계: Excel 파일을 docling 스타일로 파싱
+            # Step 1: Parse Excel file in docling style
             parsed_data = self._parse_excel_docling_style("temp_excel.xlsx")
             
-            # 2단계: 텍스트 청크 생성
+            # Step 2: Create text chunks
             self.text_chunks = self._create_text_chunks(parsed_data)
             
-            # 3단계: 임베딩 모델 로드 및 벡터 생성
+            # Step 3: Load embedding model and generate vectors
             self._initialize_embedding_model()
             self.embeddings = self._generate_embeddings(self.text_chunks)
             
-            # 4단계: FAISS 벡터 데이터베이스 구축
+            # Step 4: Build FAISS vector database
             self._build_vector_database()
             
-            # 5단계: 자동 질문 생성
+            # Step 5: Generate auto questions
             self.auto_questions = self.generate_auto_questions("temp_excel.xlsx")
             
-            # 6단계: 처리된 데이터 저장
+            # Step 6: Save processed data
             file_name = uploaded_file.name
             self.processed_data[file_name] = {
                 "type": "excel_file",
-                "content": f"Excel 파일: {file_name}",
+                "content": f"Excel file: {file_name}",
                 "parsed_data": parsed_data,
                 "chunks_count": len(self.text_chunks),
                 "vector_db_size": len(self.embeddings),
@@ -1472,133 +1472,133 @@ class CloudVLMSystem:
         }
 
 def main():
-    st.title("📊 Test Excels VLM System - Cloud")
+    st.title("🏭 Manufacturing Excel VLM System - Cloud")
     st.markdown("---")
     
-    # 사이드바
+    # Sidebar
     with st.sidebar:
-        st.header("🔧 시스템 설정")
+        st.header("🔧 System Configuration")
         
-        # LLM 모델 선택
-        st.subheader("🤖 LLM 모델 선택")
+        # LLM Model Selection
+        st.subheader("🤖 LLM Model Selection")
         available_models = st.session_state.system.llm_integration.get_available_models()
         
         if "selected_llm_model" not in st.session_state:
-            st.session_state.selected_llm_model = available_models[0] if available_models else "시뮬레이션"
+            st.session_state.selected_llm_model = available_models[0] if available_models else "Simulation"
         
-        # 모델 옵션 구성
+        # Model options configuration
         model_options = []
         if "GPT OSS 120B" in available_models:
             model_options.append("GPT OSS 120B")
         if "Qwen3" in available_models:
             model_options.append("Qwen3")
-        model_options.append("시뮬레이션")
+        model_options.append("Simulation")
         
         selected_model = st.selectbox(
-            "분석에 사용할 LLM 모델",
+            "LLM Model for Analysis",
             options=model_options,
             index=model_options.index(st.session_state.selected_llm_model) if st.session_state.selected_llm_model in model_options else len(model_options) - 1,
-            help="이미지 분석에 사용할 LLM 모델을 선택하세요"
+            help="Select LLM model for image analysis"
         )
         
         if selected_model != st.session_state.selected_llm_model:
             st.session_state.selected_llm_model = selected_model
             st.rerun()
         
-        # LLM 상태 표시
+        # LLM Status Display
         if selected_model == "GPT OSS 120B":
             if not OPENAI_AVAILABLE:
-                st.error("❌ OpenAI 패키지를 사용할 수 없습니다. 패키지 설치가 필요합니다.")
+                st.error("❌ Cannot use OpenAI package. Package installation required.")
             elif st.session_state.system.llm_integration.gpt_oss_client:
-                st.success("✅ GPT OSS 120B 모델 활성화 (API 연결됨)")
+                st.success("✅ GPT OSS 120B model activated (API connected)")
             else:
-                st.error("❌ GPT OSS 120B 모델 비활성화 (API 연결 실패)")
+                st.error("❌ GPT OSS 120B model deactivated (API connection failed)")
         elif selected_model == "Qwen3":
-            st.warning("⚠️ Qwen3 모델 (API 연결 테스트 필요)")
+            st.warning("⚠️ Qwen3 model (API connection test required)")
         else:
-            st.info("ℹ️ 시뮬레이션 모드 (실제 LLM 사용 안함)")
+            st.info("ℹ️ Simulation mode (No actual LLM usage)")
         
-        # 패키지 상태 표시
+        # Package Status Display
         if not OPENAI_AVAILABLE:
-            st.error("❌ OpenAI 패키지가 설치되지 않았습니다. requirements.txt를 확인해주세요.")
+            st.error("❌ OpenAI package not installed. Check requirements.txt.")
         else:
-            st.success("✅ OpenAI 패키지 사용 가능")
+            st.success("✅ OpenAI package available")
         
-        # API 키 상태 표시
+        # API Key Status Display
         if GPT_OSS_API_KEY.startswith("sk-or-v1-"):
-            st.warning("⚠️ API 키 형식이 올바르지 않습니다. OpenAI API 키를 설정해주세요.")
+            st.warning("⚠️ Invalid API key format. Set OpenAI API key.")
         elif GPT_OSS_API_KEY:
-            st.success("✅ API 키 설정됨")
+            st.success("✅ API key configured")
         else:
-            st.error("❌ API 키가 설정되지 않았습니다.")
+            st.error("❌ API key not configured")
         
-        if st.button("🔄 시스템 재초기화", type="primary"):
+        if st.button("🔄 Reinitialize System", type="primary"):
             st.session_state.system = CloudVLMSystem()
             st.rerun()
         
-        st.header("📁 Excel 파일 업로드")
-        st.write("Excel 파일을 업로드하여 이미지를 추출할 수 있습니다.")
+        st.header("📁 Excel File Upload")
+        st.write("Upload Excel files to extract images.")
         
         uploaded_file = st.file_uploader(
-            "Excel 파일 선택 (.xlsx)",
+            "Select Excel File (.xlsx)",
             type=['xlsx'],
-            help="이미지가 포함된 Excel 파일을 업로드하세요"
+            help="Upload Excel file containing images"
         )
         
         if uploaded_file is not None:
             col1, col2 = st.columns(2)
             
             with col1:
-                if st.button("📤 이미지 추출", type="primary"):
-                    with st.spinner("Excel 파일에서 이미지를 추출하고 있습니다..."):
+                if st.button("📤 Extract Images", type="primary"):
+                    with st.spinner("Extracting images from Excel file..."):
                         extracted_count = st.session_state.system.extract_images_from_uploaded_file(uploaded_file)
                         if extracted_count > 0:
-                            st.success(f"✅ {extracted_count}개 이미지 추출 완료!")
+                            st.success(f"✅ {extracted_count} images extracted successfully!")
                         else:
-                            st.warning("⚠️ Excel 파일에서 이미지를 찾을 수 없습니다.")
-                            st.info("💡 이미지가 포함된 Excel 파일을 업로드해주세요.")
+                            st.warning("⚠️ No images found in Excel file.")
+                            st.info("💡 Please upload Excel file containing images.")
                         st.rerun()
             
             with col2:
-                if st.button("📊 데이터 파싱", type="secondary"):
-                    with st.spinner("Excel 파일을 파싱하고 있습니다..."):
+                if st.button("📊 Parse Data", type="secondary"):
+                    with st.spinner("Parsing Excel file..."):
                         success = st.session_state.system.process_uploaded_excel_data(uploaded_file)
                         if success:
-                            st.success("✅ Excel 데이터 파싱 완료!")
+                            st.success("✅ Excel data parsing completed!")
                         else:
-                            st.warning("⚠️ 데이터 파싱에 실패했습니다.")
+                            st.warning("⚠️ Data parsing failed.")
                         st.rerun()
         
-        st.header("📊 Excel 파일 정보")
+        st.header("📊 Excel File Information")
         
-        if st.button("📁 파일 정보 보기", key="btn_file_info"):
-            st.session_state.query = "Excel 파일 정보를 보여주세요"
+        if st.button("📁 View File Information", key="btn_file_info"):
+            st.session_state.query = "Show Excel file information"
             st.rerun()
         
-        st.header("📝 예시 질문들")
+        st.header("📝 Example Questions")
         
-        # 자동 생성된 질문들 표시
+        # Display auto-generated questions
         if uploaded_file is not None and hasattr(st.session_state.system, 'auto_questions'):
-            st.subheader("🤖 AI 자동 생성 질문")
-            for i, question in enumerate(st.session_state.system.auto_questions[:8], 1):  # 상위 8개만 표시
+            st.subheader("🤖 AI Auto-Generated Questions")
+            for i, question in enumerate(st.session_state.system.auto_questions[:8], 1):  # Show top 8 only
                 if st.button(f"{i}. {question}", key=f"btn_auto_{i}"):
                     st.session_state.query = question
                     st.rerun()
             
             if len(st.session_state.system.auto_questions) > 8:
-                with st.expander(f"더 많은 질문 보기 ({len(st.session_state.system.auto_questions)}개)"):
+                with st.expander(f"View More Questions ({len(st.session_state.system.auto_questions)})"):
                     for i, question in enumerate(st.session_state.system.auto_questions[8:], 9):
                         if st.button(f"{i}. {question}", key=f"btn_auto_{i}"):
                             st.session_state.query = question
                             st.rerun()
         else:
-            # 기본 예시 질문들
+            # Default example questions
             example_questions = [
-                "Excel 파일 정보를 보여주세요",
-                "BOM 정보는 무엇인가요?",
-                "제품 생산에 필요한 자재는?",
-                "조립 공정도 이미지를 보여주세요",
-                "품질검사 기준은 무엇인가요?"
+                "Show Excel file information",
+                "What is BOM information?",
+                "What materials are needed for product production?",
+                "Show assembly process diagram image",
+                "What are the quality inspection standards?"
             ]
             
             for question in example_questions:
@@ -1606,69 +1606,69 @@ def main():
                     st.session_state.query = question
                     st.rerun()
     
-    # 메인 컨텐츠
+    # Main Content
     if 'system' not in st.session_state:
         st.session_state.system = CloudVLMSystem()
     
     if 'query' not in st.session_state:
         st.session_state.query = ""
     
-    # 현재 추출된 이미지 정보 표시
+    # Display current extracted image information
     if st.session_state.system.extracted_images:
-        st.info(f"📸 현재 {len(st.session_state.system.extracted_images)}개 이미지가 로드되어 있습니다.")
+        st.info(f"📸 Currently {len(st.session_state.system.extracted_images)} images are loaded.")
         
-        # VLM 분석 결과가 있으면 표시
+        # Display VLM analysis results if available
         if hasattr(st.session_state.system, 'image_analysis') and st.session_state.system.image_analysis:
-            st.success("🤖 VLM 이미지 분석 완료!")
-            with st.expander("🔍 VLM 이미지 분석 결과"):
+            st.success("🤖 VLM Image Analysis Completed!")
+            with st.expander("🔍 VLM Image Analysis Results"):
                 for img_name, analysis in st.session_state.system.image_analysis.items():
                     if 'error' not in analysis:
                         st.markdown(f"**{img_name}**")
-                        st.write(f"📝 **요약**: {analysis['summary']}")
-                        st.write(f"🏷️ **태그**: {', '.join(analysis['tags'])}")
-                        st.write(f"📊 **신뢰도**: {analysis['confidence']:.2f}")
+                        st.write(f"📝 **Summary**: {analysis['summary']}")
+                        st.write(f"🏷️ **Tags**: {', '.join(analysis['tags'])}")
+                        st.write(f"📊 **Confidence**: {analysis['confidence']:.2f}")
                         
-                        # LLM 모델 정보 표시
+                        # Display LLM model information
                         if "llm_model" in analysis:
-                            st.write(f"🤖 **LLM 모델**: {analysis['llm_model']}")
-                            st.write(f"🔧 **분석 방법**: {analysis['analysis_method']}")
+                            st.write(f"🤖 **LLM Model**: {analysis['llm_model']}")
+                            st.write(f"🔧 **Analysis Method**: {analysis['analysis_method']}")
                         
-                        with st.expander("📋 상세 분석"):
+                        with st.expander("📋 Detailed Analysis"):
                             for detail in analysis['details']:
                                 st.write(f"• {detail}")
                             
-                            # LLM 원본 텍스트 표시
+                            # Display LLM original text
                             if "llm_raw_text" in analysis:
                                 st.write("---")
-                                st.write("**🤖 LLM 원본 분석:**")
+                                st.write("**🤖 LLM Original Analysis:**")
                                 st.write(analysis['llm_raw_text'])
                         
                         st.divider()
                     else:
                         st.error(f"❌ {img_name}: {analysis['error']}")
         
-        with st.expander("📋 로드된 이미지 목록"):
+        with st.expander("📋 Loaded Image List"):
             for img_name in st.session_state.system.extracted_images.keys():
                 st.write(f"- {img_name}")
     
-    # 쿼리 입력
+    # Query Input
     query = st.text_input(
-        "🔍 질문을 입력하세요:",
+        "🔍 Enter your question:",
         value=st.session_state.query,
-        placeholder="예: 조립 공정은 어떤 것들이 있나요?"
+        placeholder="e.g., What assembly processes are there?"
     )
     
-    if st.button("🚀 질문하기", type="primary") or st.session_state.query:
+    if st.button("🚀 Ask Question", type="primary") or st.session_state.query:
         if query:
             st.session_state.query = query
-            with st.spinner("질문을 처리하고 있습니다..."):
+            with st.spinner("Processing your question..."):
                 result = st.session_state.system.query_system(query)
                 display_result(result)
         else:
-            st.warning("질문을 입력해주세요.")
+            st.warning("Please enter a question.")
 
 def display_result(result):
-    """결과 표시"""
+    """Display Results"""
     if result["type"] == "assembly":
         st.subheader(result["title"])
         col1, col2 = st.columns([2, 1])
@@ -1677,8 +1677,8 @@ def display_result(result):
             st.dataframe(result["data"], width='stretch')
         
         with col2:
-            st.metric("총 공정 수", result["summary"])
-            st.info("SM-F741U 모델의 조립 공정 절차")
+            st.metric("Total Processes", result["summary"])
+            st.info("SM-F741U Model Assembly Process Procedures")
     
     elif result["type"] == "product":
         st.subheader(result["title"])
@@ -1688,8 +1688,8 @@ def display_result(result):
             st.dataframe(result["data"], width='stretch')
         
         with col2:
-            st.metric("모델명", result["summary"])
-            st.info("제품 기본 정보")
+            st.metric("Model Name", result["summary"])
+            st.info("Product Basic Information")
     
     elif result["type"] == "erp":
         st.subheader(result["title"])
@@ -1699,8 +1699,8 @@ def display_result(result):
             st.dataframe(result["data"], width='stretch')
         
         with col2:
-            st.metric("시스템", result["summary"])
-            st.info("ERP 시스템 기능")
+            st.metric("System", result["summary"])
+            st.info("ERP System Functions")
     
     elif result["type"] == "quality":
         st.subheader(result["title"])
@@ -1710,8 +1710,8 @@ def display_result(result):
             st.dataframe(result["data"], width='stretch')
         
         with col2:
-            st.metric("품질 관리", result["summary"])
-            st.info("품질 검사 기준 및 절차")
+            st.metric("Quality Management", result["summary"])
+            st.info("Quality Inspection Standards and Procedures")
     
     elif result["type"] == "image":
         st.subheader(result["title"])
@@ -1723,36 +1723,36 @@ def display_result(result):
         
         st.image(img_byte_arr, caption=result["description"], width=400)
         
-        # 이미지 정보 표시
-        st.info(f"📐 이미지 크기: {result['image'].size[0]} x {result['image'].size[1]} 픽셀")
+        # Display image information
+        st.info(f"📐 Image Size: {result['image'].size[0]} x {result['image'].size[1]} pixels")
         
-        # VLM 분석 결과 표시
+        # Display VLM analysis results
         if "vlm_analysis" in result:
-            st.success("🤖 VLM 이미지 분석 결과")
+            st.success("🤖 VLM Image Analysis Results")
             vlm = result["vlm_analysis"]
-            st.write(f"**📝 요약**: {vlm['summary']}")
-            st.write(f"**🏷️ 유형**: {vlm['type']}")
-            st.write(f"**🔖 태그**: {', '.join(vlm['tags'])}")
-            st.write(f"**📊 신뢰도**: {vlm['confidence']:.2f}")
+            st.write(f"**📝 Summary**: {vlm['summary']}")
+            st.write(f"**🏷️ Type**: {vlm['type']}")
+            st.write(f"**🔖 Tags**: {', '.join(vlm['tags'])}")
+            st.write(f"**📊 Confidence**: {vlm['confidence']:.2f}")
             
-            # LLM 모델 정보 표시
+            # Display LLM model information
             if "llm_model" in vlm:
-                st.write(f"**🤖 LLM 모델**: {vlm['llm_model']}")
-                st.write(f"**🔧 분석 방법**: {vlm['analysis_method']}")
+                st.write(f"**🤖 LLM Model**: {vlm['llm_model']}")
+                st.write(f"**🔧 Analysis Method**: {vlm['analysis_method']}")
             
-            with st.expander("📋 상세 분석"):
+            with st.expander("📋 Detailed Analysis"):
                 for detail in vlm['details']:
                     st.write(f"• {detail}")
                 
-                # LLM 원본 텍스트 표시
+                # Display LLM original text
                 if "llm_raw_text" in vlm:
                     st.write("---")
-                    st.write("**🤖 LLM 원본 분석:**")
+                    st.write("**🤖 LLM Original Analysis:**")
                     st.write(vlm['llm_raw_text'])
         
-        # 다른 매칭된 이미지들도 표시
+        # Display other matched images
         if "all_images" in result and len(result["all_images"]) > 1:
-            st.write("🔍 다른 관련 이미지들:")
+            st.write("🔍 Other Related Images:")
             for i, (img_name, img, desc) in enumerate(result["all_images"][1:], 1):
                 with st.expander(f"{i}. {img_name}"):
                     img_byte_arr = io.BytesIO()
@@ -1764,15 +1764,15 @@ def display_result(result):
         st.subheader(result["title"])
         st.write(result["content"])
         
-        # 사용 가능한 이미지 목록 표시
+        # Display available image list
         if "available_images" in result:
-            st.write("📋 사용 가능한 이미지:")
+            st.write("📋 Available Images:")
             for img_name in result["available_images"]:
                 st.write(f"- {img_name}")
         
-        # 모든 이미지 표시
+        # Display all images
         if "all_images" in result:
-            st.write("🖼️ 모든 이미지:")
+            st.write("🖼️ All Images:")
             for i, (img_name, img, desc) in enumerate(result["all_images"], 1):
                 with st.expander(f"{i}. {img_name}"):
                     img_byte_arr = io.BytesIO()
@@ -1785,7 +1785,7 @@ def display_result(result):
         st.write(result["content"])
         
         if "available_images" in result:
-            st.write("📋 사용 가능한 이미지:")
+            st.write("📋 Available Images:")
             for img_name in result["available_images"]:
                 st.write(f"- {img_name}")
     
@@ -1797,8 +1797,8 @@ def display_result(result):
             st.dataframe(result["data"], width='stretch')
         
         with col2:
-            st.metric("검색 결과", result["summary"])
-            st.info("Excel 파일에서 찾은 데이터")
+            st.metric("Search Results", result["summary"])
+            st.info("Data found in Excel file")
     
     elif result["type"] == "vector_search":
         st.subheader(result["title"])
@@ -1808,19 +1808,19 @@ def display_result(result):
             st.dataframe(result["data"], width='stretch')
         
         with col2:
-            st.metric("벡터 검색 결과", result["summary"])
-            st.info("AI 벡터 검색으로 찾은 유사한 내용")
+            st.metric("Vector Search Results", result["summary"])
+            st.info("Similar content found using AI vector search")
             
-            # 상세 정보 표시
+            # Display detailed information
             if "raw_results" in result:
-                st.write("🔍 상세 검색 결과:")
+                st.write("🔍 Detailed Search Results:")
                 for i, raw_result in enumerate(result["raw_results"][:3], 1):
-                    with st.expander(f"결과 {i} (유사도: {raw_result['similarity']:.3f})"):
-                        st.write(f"**시트**: {raw_result['sheet_name']}")
-                        st.write(f"**유형**: {raw_result['type']}")
-                        st.write(f"**내용**: {raw_result['content']}")
+                    with st.expander(f"Result {i} (Similarity: {raw_result['similarity']:.3f})"):
+                        st.write(f"**Sheet**: {raw_result['sheet_name']}")
+                        st.write(f"**Type**: {raw_result['type']}")
+                        st.write(f"**Content**: {raw_result['content']}")
                         if raw_result.get("metadata"):
-                            st.write(f"**메타데이터**: {raw_result['metadata']}")
+                            st.write(f"**Metadata**: {raw_result['metadata']}")
     
     elif result["type"] == "file_info":
         st.subheader(result["title"])
@@ -1830,20 +1830,20 @@ def display_result(result):
             st.dataframe(result["data"], width='stretch')
         
         with col2:
-            st.metric("파일 수", result["summary"])
-            st.info("처리된 Excel 파일 정보")
+            st.metric("File Count", result["summary"])
+            st.info("Processed Excel file information")
     
     elif result["type"] == "no_files":
         st.subheader(result["title"])
         st.write(result["content"])
-        st.info("📤 Excel 파일을 업로드하여 데이터를 처리할 수 있습니다.")
+        st.info("📤 Upload Excel files to process data.")
     
     elif result["type"] == "general":
         st.subheader(result["title"])
         st.write(result["content"])
         
         if "suggestions" in result:
-            st.write("💡 추천 질문:")
+            st.write("💡 Recommended Questions:")
             for suggestion in result["suggestions"]:
                 st.write(f"- {suggestion}")
 
